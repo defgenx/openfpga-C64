@@ -1,0 +1,26 @@
+# C64_MiSTer sources (from C64_MiSTer/files.qip; c64.sv, sys/ and the MiSTer PLL are replaced in core/)
+set_global_assignment -name QIP_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/sid/sid.qip]
+set_global_assignment -name QIP_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/iec_drive/iec_drive.qip]
+set_global_assignment -name QIP_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/t65/t65.qip]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/cpu_6510.vhd]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/mos6526.v]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/rtcF83.sv]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/sdram.v]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/dprom.vhd]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/spram.vhd]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/cartridge.v]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/reu.v]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/am29f040.sv]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/c1530.sv]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/c1351.v]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/video_sync.vhd]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/video_vicII_656x.vhd]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/fpga64_rgbcolor.vhd]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/fpga64_keyboard.vhd]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/fpga64_buslogic.vhd]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/fpga64_sid_iec.vhd]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/drv_overlay.sv]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/tap_scanner.sv]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/tap_time_map.sv]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/tape_counter.sv]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/tape_subsystem.sv]

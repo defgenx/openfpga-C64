@@ -1,0 +1,52 @@
+{
+  "input": {
+    "magic": "APF_VER_1",
+    "controllers": [
+      {
+        "type": "default",
+        "mappings": [
+          {
+            "id": 0,
+            "name": "Fire/Space/L-Click",
+            "key": "pad_btn_a"
+          },
+          {
+            "id": 1,
+            "name": "Space/Return/R-Clk",
+            "key": "pad_btn_b"
+          },
+          {
+            "id": 2,
+            "name": "Return/F1/Space",
+            "key": "pad_btn_x"
+          },
+          {
+            "id": 3,
+            "name": "F1/F3/Return",
+            "key": "pad_btn_y"
+          },
+          {
+            "id": 4,
+            "name": "Run/Stop",
+            "key": "pad_trig_l"
+          },
+          {
+            "id": 5,
+            "name": "F7/F5/F1",
+            "key": "pad_trig_r"
+          },
+          {
+            "id": 6,
+            "name": "On-screen Keyboard",
+            "key": "pad_btn_select"
+          },
+          {
+            "id": 7,
+            "name": "Joy/Keys/Mouse mode",
+            "key": "pad_btn_start"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+release/
+*.zip
+sim/gcr/
+sim/media/
+sim/video/
+sim/vic/trace_*.txt
+sim/vic/*.ppm
+sim/vic/work/
+sim/__pycache__/

@@ -1,0 +1,65 @@
+{
+  "data": {
+    "magic": "APF_VER_1",
+    "data_slots": [
+      {
+        "name": "Program",
+        "id": 0,
+        "required": false,
+        "parameters": "0x001",
+        "deferload": true,
+        "extensions": [
+          "prg"
+        ],
+        "size_maximum": "0x10002"
+      },
+      {
+        "name": "Cartridge",
+        "id": 1,
+        "required": false,
+        "parameters": "0x001",
+        "deferload": true,
+        "extensions": [
+          "crt"
+        ],
+        "size_maximum": "0x200000"
+      },
+      {
+        "name": "Disk",
+        "id": 2,
+        "required": false,
+        "parameters": "0x201",
+        "deferload": true,
+        "extensions": [
+          "d64",
+          "g64",
+          "d81"
+        ],
+        "size_maximum": "0x200000"
+      },
+      {
+        "name": "Tape",
+        "id": 4,
+        "required": false,
+        "parameters": "0x001",
+        "deferload": true,
+        "extensions": [
+          "tap"
+        ],
+        "size_maximum": "0xC00000"
+      },
+      {
+        "name": "System ROM",
+        "id": 5,
+        "required": false,
+        "parameters": "0x201",
+        "deferload": true,
+        "extensions": [
+          "rom",
+          "bin"
+        ],
+        "size_maximum": "0xC000"
+      }
+    ]
+  }
+}

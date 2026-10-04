@@ -1,0 +1,305 @@
+{
+  "interact": {
+    "magic": "APF_VER_1",
+    "variables": [
+      {
+        "name": "Reset",
+        "id": 1,
+        "type": "action",
+        "enabled": true,
+        "address": "0x80000000",
+        "value": 1
+      },
+      {
+        "name": "Reset & Detach Cart",
+        "id": 2,
+        "type": "action",
+        "enabled": true,
+        "address": "0x80000004",
+        "value": 1
+      },
+      {
+        "name": "Model",
+        "id": 3,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x80000008",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "C64 (6581 SID)"
+          },
+          {
+            "value": 1,
+            "name": "C64C (8580 SID)"
+          }
+        ]
+      },
+      {
+        "name": "Video",
+        "id": 4,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x8000000C",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "PAL"
+          },
+          {
+            "value": 1,
+            "name": "NTSC"
+          }
+        ]
+      },
+      {
+        "name": "Joystick Port",
+        "id": 5,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x80000010",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "Port 2"
+          },
+          {
+            "value": 1,
+            "name": "Port 1"
+          }
+        ]
+      },
+      {
+        "name": "Pad Mode",
+        "id": 6,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x80000014",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "Joystick"
+          },
+          {
+            "value": 2,
+            "name": "Keys"
+          },
+          {
+            "value": 1,
+            "name": "Mouse"
+          }
+        ]
+      },
+      {
+        "name": "Second SID",
+        "id": 7,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x80000018",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "Off"
+          },
+          {
+            "value": 2,
+            "name": "D420"
+          },
+          {
+            "value": 3,
+            "name": "D500"
+          },
+          {
+            "value": 1,
+            "name": "DE00"
+          },
+          {
+            "value": 4,
+            "name": "DF00"
+          }
+        ]
+      },
+      {
+        "name": "REU",
+        "id": 9,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x80000020",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "Off"
+          },
+          {
+            "value": 1,
+            "name": "512 KB"
+          },
+          {
+            "value": 2,
+            "name": "2 MB"
+          },
+          {
+            "value": 3,
+            "name": "16 MB"
+          }
+        ]
+      },
+      {
+        "name": "Write Protect",
+        "id": 10,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x80000024",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "Off"
+          },
+          {
+            "value": 1,
+            "name": "On"
+          }
+        ]
+      },
+      {
+        "name": "Borders",
+        "id": 11,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x80000028",
+        "defaultval": 1,
+        "options": [
+          {
+            "value": 1,
+            "name": "Show"
+          },
+          {
+            "value": 0,
+            "name": "Hide"
+          }
+        ]
+      },
+      {
+        "name": "Palette",
+        "id": 12,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x8000002C",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "Colodore"
+          },
+          {
+            "value": 1,
+            "name": "Ultimate"
+          },
+          {
+            "value": 2,
+            "name": "Pepto-PAL"
+          },
+          {
+            "value": 3,
+            "name": "Vice"
+          },
+          {
+            "value": 4,
+            "name": "Vice 6569R1"
+          },
+          {
+            "value": 5,
+            "name": "Vice 6569R5"
+          },
+          {
+            "value": 6,
+            "name": "Vice 8565R2"
+          },
+          {
+            "value": 7,
+            "name": "Lemon64"
+          }
+        ]
+      },
+      {
+        "name": "Drive Display",
+        "id": 13,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x80000030",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "Activity"
+          },
+          {
+            "value": 1,
+            "name": "If Mounted"
+          },
+          {
+            "value": 3,
+            "name": "Off"
+          }
+        ]
+      },
+      {
+        "name": "Tape Play/Pause",
+        "id": 14,
+        "type": "action",
+        "enabled": true,
+        "address": "0x80000034",
+        "value": 1
+      },
+      {
+        "name": "Turbo",
+        "id": 15,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x80000038",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "Off"
+          },
+          {
+            "value": 1,
+            "name": "C128"
+          },
+          {
+            "value": 2,
+            "name": "Smart"
+          }
+        ]
+      },
+      {
+        "name": "Reset All Settings",
+        "id": 16,
+        "type": "action",
+        "enabled": true,
+        "address": "0x8000003C",
+        "value": 1
+      }
+    ],
+    "messages": []
+  }
+}

@@ -1,0 +1,3 @@
+[submodule "src/fpga/C64_MiSTer"]
+	path = src/fpga/C64_MiSTer
+	url = https://github.com/MiSTer-devel/C64_MiSTer.git
