@@ -6,59 +6,46 @@
         "name": "Program",
         "id": 0,
         "required": false,
-        "parameters": "0x001",
+        "parameters": 1,
         "deferload": true,
-        "extensions": [
-          "prg"
-        ],
-        "size_maximum": "0x10002"
+        "extensions": ["prg"],
+        "size_maximum": 65538
       },
       {
         "name": "Cartridge",
         "id": 1,
         "required": false,
-        "parameters": "0x001",
+        "parameters": 1,
         "deferload": true,
-        "extensions": [
-          "crt"
-        ],
-        "size_maximum": "0x200000"
+        "extensions": ["crt"],
+        "size_maximum": 2097152
       },
       {
         "name": "Disk",
         "id": 2,
         "required": false,
-        "parameters": "0x201",
+        "parameters": 513,
         "deferload": true,
-        "extensions": [
-          "d64",
-          "g64",
-          "d81"
-        ],
-        "size_maximum": "0x200000"
+        "extensions": ["d64", "g64", "d81"],
+        "size_maximum": 2097152
       },
       {
         "name": "Tape",
         "id": 4,
         "required": false,
-        "parameters": "0x001",
+        "parameters": 1,
         "deferload": true,
-        "extensions": [
-          "tap"
-        ],
-        "size_maximum": "0xC00000"
+        "extensions": ["tap"],
+        "size_maximum": 12582912
       },
       {
         "name": "System ROM",
         "id": 5,
         "required": false,
-        "parameters": "0x201",
+        "parameters": 513,
         "deferload": true,
-        "extensions": [
-          "rom",
-          "bin"
-        ],
-        "size_maximum": "0xC000"
+        "extensions": ["rom", "bin"],
+        "size_maximum": 49152
       }
     ]
   }
