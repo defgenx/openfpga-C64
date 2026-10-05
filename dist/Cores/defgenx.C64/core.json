@@ -9,8 +9,8 @@
       "description": "Commodore 64, port of the C64_MiSTer core",
       "author": "defgenx",
       "url": "https://github.com/defgenx/openfpga-C64",
-      "version": "0.1.0",
-      "date_release": "2026-10-04"
+      "version": "0.2.0",
+      "date_release": "2026-10-05"
     },
     "framework": {
       "target_product": "Analogue Pocket",

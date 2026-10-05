@@ -17,7 +17,14 @@ Commodore 64 core (Sorgelig and contributors, built on Peter Wendrich's FPGA64),
 * Loadable System ROM: JiffyDOS, DolphinDOS, SpeedDOS (same files as on MiSTer)
 * REU up to 16 MB, second SID (stereo), C128 / smart turbo
 * 1351 mouse, user port 4-player adapter (Dock controllers 3 and 4)
-* Playable handheld: joystick, keys and mouse pad modes (Start), on-screen keyboard (Select)
+* Playable handheld, no typing needed:
+  * **autostart** — a disk or tape picked at the BASIC prompt is loaded and run (`LOAD"*",8,1` / `RUN`
+    typed for you); picked during a game, it is just inserted, for disk swaps
+  * joystick, keys and mouse pad modes (Start), on-screen keyboard (Select), joystick port swap (hold Select)
+  * a loading screen with progress for cartridges, tapes and disk images
+
+  ![On-screen keyboard](docs/osk.png)
+
 * Dock USB keyboard and mouse
 
 ## Installing
@@ -52,12 +59,14 @@ Installer options:
 |---------------------|-------------|----------------------------------------------------------------------|
 | `.prg`              | Program     | the C64 resets, the program is put in memory and `RUN` is typed      |
 | `.crt`              | Cartridge   | the C64 restarts with the cartridge; *Reset & Detach Cart* removes it |
-| `.d64` `.g64` `.d81`| Disk        | the disk is inserted in drive 8; type `LOAD"*",8,1` then `RUN`        |
-| `.tap`              | Tape        | type `LOAD` (or Shift + Run/Stop); the tape starts by itself          |
+| `.d64` `.g64` `.d81`| Disk        | at the BASIC prompt: loaded and run (autostart); otherwise inserted in drive 8 |
+| `.tap`              | Tape        | at the BASIC prompt: loaded and run (Shift + Run/Stop typed for you)  |
 | `.rom` `.bin`       | System ROM  | replaces the C64 + 1541 ROMs (MiSTer's format: BASIC + KERNAL + 1541) |
 
-Disks and the System ROM are remembered and come back at the next start; programs, cartridges and tapes
-are not. Writing to a disk is saved to its file on the card a moment later (½ s after the drive stops
+Autostart only types when the C64 is at the BASIC prompt, so a disk picked while a game asks for
+"side 2" is simply swapped in. Set *Autostart* to *Off* to always insert disks without typing. Disks and
+the System ROM are remembered and come back at the next start (and autostart then runs the disk);
+programs, cartridges and tapes are not. Writing to a disk is saved to its file on the card a moment later (½ s after the drive stops
 writing); set *Write Protect* to keep a disk unchanged.
 
 ## Controls
@@ -74,11 +83,12 @@ confirms each switch. It starts in joystick mode.
 | Y          | F1                        | F3            | Return               | –                   |
 | L          | Run/Stop                  | Run/Stop      | Run/Stop             | –                   |
 | R          | F7                        | F5            | F1                   | –                   |
-| **Select** | show keyboard             | show keyboard | show keyboard        | close the keyboard  |
+| **Select** | show keyboard; **hold**: swap joystick port | show keyboard | show keyboard | close the keyboard  |
 | **Start**  | → keys                    | → mouse       | → joystick           | –                   |
 
-The pad is joystick **port 2** by default, where most games read it (*Joystick Port* switches it to port 1);
-a second controller in the Dock is the other port. On the on-screen keyboard CTRL, SHIFT and C= are sticky:
+The pad is joystick **port 2** by default, where most games read it. If a game ignores the joystick,
+**hold Select** for a moment: the pad moves to the other port (a PORT 1 / PORT 2 label confirms it).
+*Joystick Port* in the menu sets the port it starts on. A second controller in the Dock is the other port. On the on-screen keyboard CTRL, SHIFT and C= are sticky:
 press SHIFT, then the key. `RS` is Run/Stop, `RE` Restore, `HM` Clr/Home, `DL` Inst/Del, `SL` Shift Lock.
 In the Dock, a USB keyboard works like the C64's (Esc = Run/Stop, Tab = C=, F11 = Restore,
 Home = Clr/Home). Details: [docs/input.md](docs/input.md).
@@ -96,6 +106,7 @@ On the Pocket: press the Analogue button while the core runs → *Core Settings*
 | Joystick Port       | Port 2 / Port 1                          | which port the Pocket's pad is                        |
 | Pad Mode            | Joystick / Keys / Mouse                  | the mode the pad starts in; Start cycles them        |
 | Second SID          | Off / D420 / D500 / DE00 / DF00          | stereo: the second SID on the right channel          |
+| Autostart           | On / Off                                 | load and run a disk or tape picked at the BASIC prompt |
 | REU                 | Off / 512 KB / 2 MB / 16 MB              | RAM Expansion Unit                                   |
 | Write Protect       | Off / On                                 | applies to the next disk inserted                    |
 | Borders             | Show / Hide                              | hide to fill the screen with the 320×200 area        |
@@ -114,7 +125,8 @@ Settings are saved on the card (`Settings/defgenx.C64/`) and come back at the ne
 | **"Load error in 'core'" / "General error"** when starting the core | An old or mixed install. Run the installer again and answer **a** (replace all), or delete `Cores/defgenx.C64/` from the card first. |
 | **Black or rolling picture after changing a setting** | *Core Settings → Reset All Settings*. If the menu doesn't help: `./install.sh --reset-settings` (Windows: `install.bat -ResetSettings`), or delete `Settings/defgenx.C64/` on the card. |
 | **`?DEVICE NOT PRESENT ERROR`** | No disk in the drive: pick one in *Disk*. Only drive 8 exists. A `.d64` smaller than 174,848 bytes is not a disk image. |
-| **The joystick does nothing** | Press **Start** until the label shows JOYSTICK; if the game uses port 1, set *Joystick Port* to *Port 1*. |
+| **The joystick does nothing** | Press **Start** until the label shows JOYSTICK, then **hold Select** to swap the port. |
+| **A disk did not start by itself** | The C64 was not at the BASIC prompt (or *Autostart* is off): *Reset*, then pick the disk again, or type `LOAD"*",8,1` and `RUN`. |
 | **A game runs too fast / music too high** | It is an NTSC game on PAL or the reverse: change *Video*. |
 | **A game cannot save** | *Write Protect* is on (re-insert the disk after changing it). |
 | **A protected disk does not load** | Try the `.g64` version of the disk; `.d64` cannot hold copy protection. |
@@ -148,6 +160,9 @@ make -C sim           # needs Icarus Verilog, Python 3 and nvc (VHDL)
 * `media`: `c64_media` + `ddram_psram` against models of APF's target commands, the Pocket's PSRAM and
   the C64 — PRG streaming with `ioctl_wait`, a D64 mounted as a G64 identical to MiSTer's, a 1541 track
   written back into D64 sectors, a G64 copied and written back, D81 sectors read and written.
+* `autostart`: `LOAD"*",8,1` / `RUN` typed for a disk at the prompt, Shift+Run/Stop for a tape, nothing
+  for a disk swapped in during a game.
+* `osk`: renders the on-screen keyboard and the loading screen to `sim/video/*.png`.
 * `video`: `c64_video` fed with C64_MiSTer's own VIC-II and `video_sync` (simulated with nvc): exact
   line and frame sizes for PAL/NTSC with and without borders, and the 320×200 window exactly on the
   display area.

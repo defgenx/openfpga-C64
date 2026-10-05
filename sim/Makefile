@@ -2,7 +2,7 @@
 CORE = ../src/fpga/core
 C64  = ../src/fpga/C64_MiSTer/rtl
 
-all: gcr media video hid
+all: gcr media video hid autostart osk
 
 # gcr_synth byte-exact against Main_MiSTer's D64 -> GCR; gcr_decode at any bit rotation
 gcr:
@@ -33,7 +33,22 @@ hid:
 	vvp -n hid_tb.vvp | grep -v finish
 	rm -f hid_tb.vvp
 
+# autostart: LOAD/RUN typed at the prompt only
+autostart:
+	iverilog -g2012 -o autostart_tb.vvp autostart_tb.sv $(CORE)/autostart.sv
+	vvp -n autostart_tb.vvp | grep -v finish
+	rm -f autostart_tb.vvp
+
+# on-screen keyboard and loading screen rendered to sim/video/*.png (docs/osk.png)
+osk:
+	mkdir -p video
+	iverilog -g2012 -I$(CORE) -o osk_tb.vvp osk_tb.sv $(CORE)/osk.sv
+	vvp -n osk_tb.vvp | grep -v finish
+	rm -f osk_tb.vvp
+	python3 ppm2png.py video/osk_frame.ppm video/osk_frame.png
+	python3 ppm2png.py video/load_frame.ppm video/load_frame.png
+
 clean:
 	rm -rf gcr media video vic/trace_*.txt vic/*.ppm vic/work __pycache__
 
-.PHONY: all gcr media video hid clean
+.PHONY: all gcr media video hid autostart osk clean

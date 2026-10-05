@@ -15,6 +15,7 @@ apf_top (Analogue)
     │   └── gcr_decode            flushed GCR track -> D64 sectors (Main_MiSTer's c64_writeGCR)
     ├── ddram_psram               MiSTer's DDRAM port on the Pocket's PSRAM (agg23's psram.sv)
     ├── hid_c64                   Dock keyboard/mouse + pad -> ps2_key / ps2_mouse words
+    ├── autostart                 types LOAD"*",8,1 / RUN for a disk or tape picked at the BASIC prompt
     ├── osk_ctrl / osk_overlay    on-screen keyboard
     ├── c64_video                 VIC-II output -> APF scaler (fixed windows, slot select)
     ├── sound_i2s                 16-bit stereo -> Pocket I2S DAC (agg23, MIT)
@@ -68,6 +69,11 @@ A disk is a **G64** if it starts with `GCR-1541`, a **D81** if it is at least 81
 
 Then `img_mounted` pulses with `img_type` 01 (1541) or 11 (1581), and C64_MiSTer's drives take over.
 
+While a file streams or an image is prepared (not for D81, which needs no preparation), `loading`,
+`load_kind` and `load_pct` drive the loading screen in `osk_overlay`. The percentage avoids a divider:
+work done is added ×100 to an accumulator, and each time it reaches the total one percent is counted
+(BCD) and the total subtracted.
+
 ### 1541 write-back
 
 C64_MiSTer's `c1541_track` writes a modified track into its image (PSRAM here) itself, then flushes it
@@ -115,6 +121,7 @@ the core holds.
 | `0x80000010` | Joystick Port       | 0 port 2, 1 port 1 (status[3] = swap)               |
 | `0x80000014` | Pad Mode            | 0 joystick, 1 mouse, 2 keys                         |
 | `0x80000018` | Second SID          | status[22:20]: 0 off, 1 DE00, 2 D420, 3 D500, 4 DF00 |
+| `0x8000001C` | Autostart           | 0 off, 1 on (autostart.sv)                          |
 | `0x80000020` | REU                 | status[54:53]                                       |
 | `0x80000024` | Write Protect       | status[76]                                          |
 | `0x80000028` | Borders             | 0 hide, 1 show (c64_video)                          |

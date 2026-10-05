@@ -18,7 +18,8 @@ module osk_ctrl (
 	output reg   [3:0] cur_col,
 	output reg   [2:0] mods,         // latched {C=, shift, ctrl}
 	output reg   [7:0] key,          // HID usage held down, 0 = none
-	output reg         mouse_toggle  // Start pressed with the keyboard hidden
+	output reg         mouse_toggle, // Start pressed with the keyboard hidden
+	output reg         select_long   // Select held ~0.6 s (instead of a short press)
 );
 
 `include "osk_layout.svh"
@@ -26,6 +27,7 @@ module osk_ctrl (
 localparam ROWS = 5, COLS = 16;
 localparam [23:0] REPEAT_FIRST = 24'd12_800_000;  // ~400 ms at 32 MHz
 localparam [23:0] REPEAT_NEXT  = 24'd3_200_000;   // ~100 ms
+localparam [24:0] LONG_PRESS   = 25'd19_200_000;  // ~600 ms
 
 wire up = pad[0], down = pad[1], left = pad[2], right = pad[3];
 wire btn_a = pad[4], btn_b = pad[5], select = pad[14], start = pad[15];
@@ -39,19 +41,34 @@ wire        usage_is_mod = usage == 8'hE0 || usage == 8'hE1 || usage == 8'hE2 ||
 
 initial begin
 	visible = 1'b0; cur_row = 3'd0; cur_col = 4'd0; mods = 3'b000; key = 8'h00; mouse_toggle = 1'b0;
+	select_long = 1'b0;
 end
+
+// Select: a short press (released before LONG_PRESS) toggles the keyboard; holding it
+// pulses select_long once instead
+reg [24:0] sel_time = 25'd0;
+reg        sel_fired = 1'b0;
 
 always @(posedge clk) begin
 	reg step;
 	pad_d <= pad;
 	mouse_toggle <= 1'b0;
+	select_long <= 1'b0;
+
+	if (select) begin
+		if (sel_time != LONG_PRESS) sel_time <= sel_time + 25'd1;
+		else if (!sel_fired) begin sel_fired <= 1'b1; select_long <= 1'b1; end
+	end else begin
+		sel_time <= 25'd0;
+		sel_fired <= 1'b0;
+	end
 
 	if (reset) begin
 		visible <= 1'b0;
 		mods <= 3'b000;
 		key <= 8'h00;
 	end else begin
-		if (select & ~pad_d[14]) begin
+		if (~select & pad_d[14] & ~sel_fired) begin
 			visible <= ~visible;
 			key <= 8'h00;
 		end
@@ -107,7 +124,10 @@ module osk_overlay #(
 	input  wire  [3:0] cur_col,
 	input  wire  [2:0] mods,
 	input  wire        badge,        // show the pad-mode label
-	input  wire  [1:0] badge_mode,   // 0 JOYSTICK, 1 MOUSE, 2 KEYS
+	input  wire  [2:0] badge_mode,   // 0 JOYSTICK, 1 MOUSE, 2 KEYS, 3 PORT 1, 4 PORT 2
+	input  wire        loading,      // a file is being loaded: loading screen
+	input  wire  [2:0] load_kind,    // 0 program, 1 cartridge, 2 disk, 3 tape, 4 ROM
+	input  wire [11:0] load_pct,     // 3 BCD digits
 
 	input  wire [23:0] in_rgb,
 	input  wire        in_de,
@@ -171,23 +191,59 @@ wire        latched = (cell_usage == 8'hE0 && mods[0]) || ((cell_usage == 8'hE1 
 wire [9:0]  bx = px - 10'd8;
 wire [9:0]  by = py - 10'd4;
 wire        in_badge = badge && in_de && (bx < 10'd64) && (by < 10'd8);
-function automatic [6:0] badge_char(input [1:0] mode, input [2:0] pos);
+function automatic [6:0] badge_char(input [2:0] mode, input [2:0] pos);
 	reg [63:0] s;
-	s = mode == 2'd1 ? " MOUSE  " : mode == 2'd2 ? "  KEYS  " : "JOYSTICK";
+	case (mode)
+		3'd1: s = " MOUSE  ";
+		3'd2: s = "  KEYS  ";
+		3'd3: s = " PORT 1 ";
+		3'd4: s = " PORT 2 ";
+		default: s = "JOYSTICK";
+	endcase
 	badge_char = s[(7 - pos) * 8 +: 7];
+endfunction
+
+// loading screen: "LOADING DISK 42%" in 2x text (16 chars, 256 px) centred, progress bar below
+wire [9:0]  lx = px - ((width - 10'd256) >> 1);
+wire [9:0]  ly = py - ((height >> 1) - 10'd16);
+wire        load_text = loading && in_de && lx < 10'd256 && ly < 10'd16;
+wire        load_bar  = loading && in_de && lx < 10'd256 && ly >= 10'd24 && ly < 10'd32;
+wire [9:0]  bar_fill  = {6'd0, load_pct[11:8]} * 10'd100 + {6'd0, load_pct[7:4]} * 10'd10 + {6'd0, load_pct[3:0]};
+function automatic [6:0] load_char(input [2:0] kind, input [11:0] pct, input [3:0] pos);
+	reg [127:0] s;
+	case (kind)
+		3'd0: s = "LOADING PRG     ";
+		3'd1: s = "LOADING CART    ";
+		3'd2: s = "LOADING DISK    ";
+		3'd3: s = "LOADING TAPE    ";
+		default: s = "LOADING ROM     ";
+	endcase
+	case (pos)
+		4'd12: load_char = pct[11:8] != 0 ? 7'd49 : 7'd32;                                  // hundreds
+		4'd13: load_char = (pct[11:8] != 0 || pct[7:4] != 0) ? 7'd48 + {3'd0, pct[7:4]} : 7'd32;
+		4'd14: load_char = 7'd48 + {3'd0, pct[3:0]};
+		4'd15: load_char = 7'd37;                                                          // %
+		default: load_char = s[(15 - pos) * 8 +: 7];
+	endcase
 endfunction
 
 // stage 1: glyph row lookup
 reg  [7:0]  glyph;
+reg         loading_s1, ltext_s1, lbar_s1, lfill_s1;
 reg  [2:0]  bit_s1;
 reg         in_kb_s1, badge_s1, text_s1, edge_s1, cursor_s1, latched_s1;
 reg [23:0]  rgb_s1;
 reg         de_s1, skip_s1, hs_s1, vs_s1;
 
 always @(posedge clk) begin
-	glyph      <= in_badge ? font[{badge_char(badge_mode, bx[5:3]), by[2:0]}]
-	                       : font[{osk_char(row, col, tx[3]), ty[2:0]}];
-	bit_s1     <= in_badge ? bx[2:0] : tx[2:0];
+	glyph      <= load_text ? font[{load_char(load_kind, load_pct, lx[7:4]), ly[3:1]}] :
+	              in_badge  ? font[{badge_char(badge_mode, bx[5:3]), by[2:0]}]
+	                        : font[{osk_char(row, col, tx[3]), ty[2:0]}];
+	bit_s1     <= load_text ? lx[3:1] : in_badge ? bx[2:0] : tx[2:0];
+	loading_s1 <= loading;
+	ltext_s1   <= load_text;
+	lbar_s1    <= load_bar;
+	lfill_s1   <= {6'd0, lx} < (({6'd0, bar_fill} * 16'd41) >> 4);   // pct * 2.56 px
 	in_kb_s1   <= in_kb | in_badge;
 	badge_s1   <= in_badge;
 	text_s1    <= text_area;
@@ -202,7 +258,10 @@ always @(posedge clk) begin
 	reg ink;
 	ink = text_s1 && glyph[bit_s1];
 	{video_de, video_skip, video_hs, video_vs} <= {de_s1, skip_s1, hs_s1, vs_s1};
-	if (!in_kb_s1)      video_rgb <= rgb_s1;
+	if (loading_s1 && de_s1)
+		video_rgb <= ltext_s1 ? (glyph[bit_s1] ? 24'hFFFFFF : 24'h40318D) :     // C64 blue on light blue
+		             lbar_s1  ? (lfill_s1 ? 24'h7869C4 : 24'h2B2160) : 24'h40318D;
+	else if (!in_kb_s1) video_rgb <= rgb_s1;
 	else if (badge_s1)  video_rgb <= glyph[bit_s1] ? 24'hFFFFFF : 24'h203060;
 	else if (edge_s1)   video_rgb <= 24'h181820;
 	else if (cursor_s1) video_rgb <= ink ? 24'h000000 : 24'hF0F0F0;

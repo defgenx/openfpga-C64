@@ -545,7 +545,7 @@ reg        cfg_ntsc     = 1'b0;
 reg        cfg_joyport  = 1'b0;   // pad 1 on: 0 port 2, 1 port 1
 reg  [1:0] cfg_padmode  = 2'd0;   // 0 joystick, 1 mouse, 2 keys
 reg  [2:0] cfg_sid2     = 3'd0;   // c64.sv's "Right SID Port": 0 same, 1 DE00, 2 D420, 3 D500, 4 DF00
-reg        cfg_opl      = 1'b0;
+reg        cfg_auto     = 1'b1;   // autostart disks and tapes picked at the BASIC prompt
 reg  [1:0] cfg_reu      = 2'd0;   // 0 off, 1 512K, 2 2M, 3 16M
 reg  [1:0] cfg_wp       = 2'd0;   // bit 0: disk write protected
 reg        cfg_borders  = 1'b1;
@@ -563,6 +563,7 @@ always @(posedge clk_74a) begin
 		8'h10: cfg_joyport  <= bridge_wr_data[0];
 		8'h14: cfg_padmode  <= bridge_wr_data[1:0];
 		8'h18: cfg_sid2     <= bridge_wr_data[2:0];
+		8'h1C: cfg_auto     <= bridge_wr_data[0];
 		8'h20: cfg_reu      <= bridge_wr_data[1:0];
 		8'h24: cfg_wp       <= bridge_wr_data[1:0];
 		8'h28: cfg_borders  <= bridge_wr_data[0];
@@ -572,7 +573,7 @@ always @(posedge clk_74a) begin
 		8'h38: cfg_turbo    <= bridge_wr_data[1:0];
 		8'h3C: begin   // Reset All Settings: defaults, then a reset
 			cfg_model <= 1'b0; cfg_ntsc <= 1'b0; cfg_joyport <= 1'b0; cfg_padmode <= 2'd0;
-			cfg_sid2 <= 3'd0; cfg_opl <= 1'b0; cfg_reu <= 2'd0; cfg_wp <= 2'd0; cfg_borders <= 1'b1;
+			cfg_sid2 <= 3'd0; cfg_auto <= 1'b1; cfg_reu <= 2'd0; cfg_wp <= 2'd0; cfg_borders <= 1'b1;
 			cfg_palette <= 3'd0; cfg_drvosd <= 2'd0; cfg_turbo <= 2'd0;
 			cfg_reset_t <= ~cfg_reset_t;
 		end
@@ -585,6 +586,7 @@ always @(posedge clk_74a) begin
 	8'h10: cfg_bridge_rd_data <= cfg_joyport;
 	8'h14: cfg_bridge_rd_data <= cfg_padmode;
 	8'h18: cfg_bridge_rd_data <= cfg_sid2;
+	8'h1C: cfg_bridge_rd_data <= cfg_auto;
 	8'h20: cfg_bridge_rd_data <= cfg_reu;
 	8'h24: cfg_bridge_rd_data <= cfg_wp;
 	8'h28: cfg_bridge_rd_data <= cfg_borders;
@@ -598,7 +600,7 @@ end
 // quasi-static settings, synchronised as a bundle
 wire [24:0] cfg_s;
 synch_3 #(.WIDTH(25)) s_cfg(
-	{cfg_turbo, cfg_drvosd, cfg_palette, cfg_borders, cfg_wp, cfg_reu, cfg_opl, cfg_sid2, cfg_padmode,
+	{cfg_turbo, cfg_drvosd, cfg_palette, cfg_borders, cfg_wp, cfg_reu, cfg_auto, cfg_sid2, cfg_padmode,
 	 cfg_joyport, cfg_model, cfg_play_t, cfg_detach_t, cfg_reset_t},
 	cfg_s, clk_sys);
 wire       reset_t_s  = cfg_s[0];
@@ -608,7 +610,7 @@ wire       model_s    = cfg_s[3];
 wire       joyport_s  = cfg_s[4];
 wire [1:0] padmode_s  = cfg_s[6:5];
 wire [2:0] sid2_s     = cfg_s[9:7];
-wire       opl_s      = cfg_s[10];
+wire       auto_s     = cfg_s[10];
 wire [1:0] reu_s      = cfg_s[12:11];
 wire [1:0] wp_s       = cfg_s[14:13];
 wire       borders_s  = cfg_s[15];
@@ -665,6 +667,7 @@ wire  [3:0] osk_col;
 wire  [2:0] osk_mods;
 wire  [7:0] osk_key;
 wire        osk_mode_next;
+wire        port_swap_t;
 
 osk_ctrl osk_ctrl (
 	.clk          ( clk_sys ),
@@ -675,7 +678,8 @@ osk_ctrl osk_ctrl (
 	.cur_col      ( osk_col ),
 	.mods         ( osk_mods ),
 	.key          ( osk_key ),
-	.mouse_toggle ( osk_mode_next )
+	.mouse_toggle ( osk_mode_next ),
+	.select_long  ( port_swap_t )
 );
 
 localparam PM_JOY = 2'd0, PM_MOUSE = 2'd1, PM_KEYS = 2'd2;
@@ -691,12 +695,24 @@ wire pad_joy_mode   = pad_mode == PM_JOY   && !osk_visible;
 wire pad_mouse_mode = pad_mode == PM_MOUSE && !osk_visible;
 wire pad_keys_mode  = pad_mode == PM_KEYS  && !osk_visible;
 
-// show JOYSTICK / KEYS / MOUSE for ~2 s whenever the mode changes
+// Holding Select swaps the joystick port (the menu's Joystick Port is the starting one)
+reg  port_swap = 1'b0;
+reg  joyport_d = 1'b0;
+always @(posedge clk_sys) begin
+	joyport_d <= joyport_s;
+	if (joyport_s != joyport_d) port_swap <= 1'b0;
+	else if (port_swap_t) port_swap <= ~port_swap;
+end
+wire pad_port1 = joyport_s ^ port_swap;   // pad 1 on port 1 (else port 2)
+
+// show JOYSTICK / KEYS / MOUSE / PORT n for ~2 s whenever the mode or the port changes
 reg [25:0] badge_timer = 26'd0;
 reg  [1:0] mode_d = PM_JOY;
+reg  [2:0] badge_mode = 3'd0;
 always @(posedge clk_sys) begin
 	mode_d <= pad_mode;
-	if (pad_mode != mode_d) badge_timer <= 26'd64_000_000;
+	if (pad_mode != mode_d) begin badge_timer <= 26'd64_000_000; badge_mode <= {1'b0, pad_mode}; end
+	else if (port_swap_t) begin badge_timer <= 26'd64_000_000; badge_mode <= pad_port1 ? 3'd4 : 3'd3; end
 	else if (badge_timer != 0) badge_timer <= badge_timer - 26'd1;
 end
 
@@ -711,7 +727,10 @@ function [7:0] k(input b, input [7:0] usage); k = b ? usage : 8'h00; endfunction
 wire [15:0] p = cont1_key_s[15:0];
 localparam [7:0] U_SPACE = 8'h2C, U_RETURN = 8'h28, U_RUNSTOP = 8'h29, U_F1 = 8'h3A, U_F3 = 8'h3C,
                  U_F5 = 8'h3E, U_F7 = 8'h40;
+wire  [7:0] auto_key;
+wire        auto_shift;
 wire [79:0] pad_keys =
+	(auto_key != 8'h00) ? {auto_key, auto_shift ? 8'hE1 : 8'h00, 64'd0} :
 	osk_visible    ? {osk_key, osk_mods[0] ? 8'hE0 : 8'h00, osk_mods[1] ? 8'hE1 : 8'h00, osk_mods[2] ? 8'hE2 : 8'h00, 48'd0} :
 	pad_keys_mode  ? {k(p[0], 8'h52), k(p[1], 8'h51), k(p[2], 8'h50), k(p[3], 8'h4F),     // cursor keys
 	                  k(p[4], U_SPACE), k(p[5], U_RETURN), k(p[6], U_F1), k(p[7], U_F3),
@@ -828,6 +847,9 @@ wire  [1:0] img_mounted;
 wire [31:0] img_size;
 wire  [1:0] img_type;
 
+wire        media_loading, media_disk_inserted, media_tape_loaded;
+wire  [2:0] media_load_kind;
+wire [11:0] media_load_pct;
 wire        ld_start, ld_we, ld_ack;
 wire [21:0] ld_addr;
 wire  [7:0] ld_wdata;
@@ -884,7 +906,12 @@ c64_media media (
 	.ld_rdata                   ( ld_rdata ),
 	.ld_ack                     ( ld_ack ),
 
-	.busy                       ( )
+	.busy                       ( ),
+	.loading                    ( media_loading ),
+	.load_kind                  ( media_load_kind ),
+	.load_pct                   ( media_load_pct ),
+	.disk_inserted              ( media_disk_inserted ),
+	.tape_loaded                ( media_tape_loaded )
 );
 
 wire        DDRAM_BUSY, DDRAM_DOUT_READY, DDRAM_RD, DDRAM_WE;
@@ -933,7 +960,7 @@ wire [127:0] status;
 assign status[0]      = reset_p != 0;                // Reset
 assign status[1]      = 1'b0;                        // release keys on reset: yes
 assign status[2]      = 1'b0;                        // video standard: ntsc_r from the PLL logic
-assign status[3]      = ~joyport_s;                  // swap: pad 1 on port 2
+assign status[3]      = ~pad_port1;                  // swap: pad 1 on port 2
 assign status[6:4]    = 3'd0;
 assign status[7]      = play_p != 0;                 // Tape Play/Pause
 assign status[11:8]   = 4'd0;                        // tape sound off
@@ -959,6 +986,7 @@ assign status[84:82]  = palette_s;
 assign status[86:85]  = drvosd_s;                    // drives OSD
 assign status[127:87] = 41'd0;
 
+wire        c64_disk_ready, c64_at_prompt;
 wire  [7:0] c64_r, c64_g, c64_b;
 wire        c64_hs, c64_vs, c64_hb, c64_vb, c64_ntsc;
 wire [15:0] audio_l, audio_r;
@@ -1045,7 +1073,26 @@ c64_top c64 (
 	.AUDIO_R          ( audio_r ),
 
 	.drive_led        ( ),
-	.tape_loaded      ( )
+	.tape_loaded      ( ),
+	.disk_ready_out   ( c64_disk_ready ),
+	.at_prompt        ( c64_at_prompt )
+);
+
+/* ------------------------------------------------------------------------------ */
+/* ---------------------------------- Autostart --------------------------------- */
+/* ------------------------------------------------------------------------------ */
+
+autostart autostart (
+	.clk           ( clk_sys ),
+	.reset         ( ~reset_n_s || reset_p != 0 || detach_p != 0 ),
+	.enable        ( auto_s ),
+	.disk_inserted ( media_disk_inserted ),
+	.tape_loaded   ( media_tape_loaded ),
+	.at_prompt     ( c64_at_prompt ),
+	.disk_ready    ( c64_disk_ready ),
+	.key           ( auto_key ),
+	.shift         ( auto_shift ),
+	.busy          ( )
 );
 
 /* ------------------------------------------------------------------------------ */
@@ -1082,7 +1129,10 @@ osk_overlay osk_overlay (
 	.cur_col    ( osk_col ),
 	.mods       ( osk_mods ),
 	.badge      ( badge_timer != 0 ),
-	.badge_mode ( pad_mode ),
+	.badge_mode ( badge_mode ),
+	.loading    ( media_loading ),
+	.load_kind  ( media_load_kind ),
+	.load_pct   ( media_load_pct ),
 	.in_rgb     ( c64_video_rgb ),
 	.in_de      ( c64_video_de ),
 	.in_skip    ( c64_video_skip ),

@@ -117,7 +117,9 @@ module c64_top
 	output [15:0] AUDIO_R,
 
 	output  [1:0] drive_led,
-	output        tape_loaded
+	output        tape_loaded,
+	output        disk_ready_out,  // the drive accepts keys again after a disk swap
+	output reg    at_prompt        // the KERNAL is waiting for a key (BASIC prompt)
 );
 
 wire [7:0]  drv_ddram_burstcnt;
@@ -1355,5 +1357,22 @@ end
 wire cass_rtc = ~(rtcF83_sda & use_rtc & cass_motor);
 
 assign tape_loaded = tap_loaded;
+assign disk_ready_out = disk_ready;
+
+// The KERNAL waits for a key in its loop at $E5CD-$E5D5 (the same in the standard, Japanese
+// and DolphinDOS kernals); at the BASIC prompt the CPU spends most of its time there.
+// Measured over ~33 ms windows of clk_sys.
+initial at_prompt = 1'b0;
+always @(posedge clk_sys) begin
+	reg [19:0] win = 0;
+	reg [19:0] hits = 0;
+	win <= win + 1'd1;
+	if (c64_addr >= 16'hE5CD && c64_addr <= 16'hE5D5) hits <= hits + 1'd1;
+	if (&win) begin
+		at_prompt <= reset_n && hits > 20'd65536;
+		hits <= 0;
+	end
+end
+
 
 endmodule

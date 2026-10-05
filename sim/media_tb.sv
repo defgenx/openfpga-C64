@@ -162,6 +162,9 @@ module media_tb;
 	end
 	assign #5 cram_dq = (!cram_ce0_n && !cram_oe_n && cram_we_n) ? pmem[paddr[20:0]] : 16'hzzzz;
 
+	integer n_inserted = 0;
+	always @(posedge clk_sys) if (media.disk_inserted) n_inserted = n_inserted + 1;
+
 	/* ---------------- C64 model ---------------- */
 	integer fio;
 	integer wait_cnt = 0, nbytes = 0;
@@ -198,6 +201,8 @@ module media_tb;
 		while (!img_mounted[drv]) @(posedge clk_sys);
 		if (img_type !== typ[1:0]) begin $display("FAIL mount drive %0d type %b", drv, img_type); end
 		else $display("mounted drive %0d type %b size %0d", drv, img_type, img_size);
+		// the last percent may land a few clocks after the screen closes
+		if (typ != 3 && media.load_pct < 12'h095) $display("FAIL loading screen ended at %h%%", media.load_pct);
 		while (img_mounted[drv]) @(posedge clk_sys);
 	endtask
 
@@ -247,6 +252,7 @@ module media_tb;
 		while (ioctl_download) @(posedge clk_sys);
 		$fclose(fio);
 		$display("prg: %0d bytes", nbytes);
+		if (media.load_pct < 12'h095) $display("FAIL prg loading screen ended at %h%%", media.load_pct);
 
 		// ---- d64 on drive 8 ----
 		pick(2, sz[2]);
@@ -282,6 +288,7 @@ module media_tb;
 		$writememh({dir, "/slot2_out.hex"}, slot2, 0, 819199);
 		$writememh({dir, "/slot3_out.hex"}, slot3, 0, sz[3] - 1);
 		$display("commands: %0d", n_cmds);
+		if (n_inserted != 2) $display("FAIL disk_inserted %0d times, expected 2 (D64, D81 on drive 8)", n_inserted);
 		$finish;
 	end
 

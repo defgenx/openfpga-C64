@@ -57,11 +57,13 @@ Copy files to `Assets/c64/common/`, then load them from *Core Settings*:
 |--------------------------|---------------|-------------------------------------------------------|
 | `.prg`                   | Program       | it starts by itself                                   |
 | `.crt`                   | Cartridge     | it starts by itself                                   |
-| `.d64` / `.g64` / `.d81` | Disk          | type `LOAD"*",8,1` and Return, then `RUN` and Return   |
-| `.tap`                   | Tape          | type `LOAD` and Return; the tape starts by itself      |
+| `.d64` / `.g64` / `.d81` | Disk          | it starts by itself (autostart)                       |
+| `.tap`                   | Tape          | it starts by itself (autostart)                       |
 
-The on-screen keyboard (Select) types the commands; `LOAD"*",8,1` needs SHIFT + 2 for `"`. With a disk
-inserted, `LOAD"$",8` and `LIST` show its directory.
+**Autostart** types `LOAD"*",8,1` and `RUN` (for a tape, Shift + Run/Stop) when the C64 is at the BASIC
+prompt. A disk picked during a game ("insert side 2") is only swapped in. With *Autostart = Off*, type the
+commands with the on-screen keyboard (Select): `LOAD"*",8,1` needs SHIFT + 2 for `"`. With a disk
+inserted, `LOAD"$",8` and `LIST` show its directory. Big files show a loading screen with progress.
 
 * Disks are **writable**: what a game saves is written back to the file on the card. Keep backups. Set
   *Write Protect* (before inserting the disk) to keep a disk unchanged.
@@ -77,7 +79,8 @@ Useful settings (*Core Settings*):
 | Setting       | What it does                                              |
 |---------------|-----------------------------------------------------------|
 | Video         | PAL (most European games) or NTSC (US games)              |
-| Joystick Port | Port 2 (most games) or Port 1                             |
+| Joystick Port | Port 2 (most games) or Port 1 — or hold Select in a game  |
+| Autostart     | Load and run disks and tapes picked at the BASIC prompt   |
 | Pad Mode      | Joystick (default), Keys or Mouse                         |
 | Model         | C64 (6581 SID) or C64C (8580 SID)                         |
 | Borders       | Show or hide the screen borders                           |
@@ -96,7 +99,7 @@ new mode for two seconds.
 | B | Space | Return | right button | close |
 | X / Y | Return / F1 | F1 / F3 | Space / Return | – |
 | L / R | Run/Stop / F7 | Run/Stop / F5 | Run/Stop / F1 | – |
-| **Select** | keyboard | keyboard | keyboard | close |
+| **Select** | keyboard; hold: swap port | keyboard | keyboard | close |
 
 On the on-screen keyboard CTRL, SHIFT and C= are sticky: press SHIFT, then the key. In the Dock, a USB
 keyboard and mouse work too (Esc = Run/Stop, Tab = C=, F11 = Restore).
@@ -107,5 +110,6 @@ keyboard and mouse work too (Esc = Run/Stop, Tab = C=, F11 = Restore).
   reach the menu, erase the saved settings: `./install.sh --reset-settings` (Windows:
   `install.bat -ResetSettings`), or delete the folder `Settings/defgenx.C64/` on the card.
 * **`?DEVICE NOT PRESENT ERROR`:** no disk in drive 8 — pick one in *Disk*.
-* **The joystick does nothing:** Start until the label says JOYSTICK; try *Joystick Port = Port 1*.
+* **The joystick does nothing:** Start until the label says JOYSTICK, then hold Select to swap the port.
+* **A disk did not start by itself:** the C64 was not at the BASIC prompt — *Reset*, then pick the disk again.
 * **Wrong speed or rolling picture:** the game is for the other video standard — change *Video*.

@@ -130,6 +130,25 @@
         ]
       },
       {
+        "name": "Autostart",
+        "id": 8,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x8000001C",
+        "defaultval": 1,
+        "options": [
+          {
+            "value": 1,
+            "name": "On"
+          },
+          {
+            "value": 0,
+            "name": "Off"
+          }
+        ]
+      },
+      {
         "name": "REU",
         "id": 9,
         "type": "list",

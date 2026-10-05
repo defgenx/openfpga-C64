@@ -75,7 +75,14 @@ module c64_media (
 	input  wire [15:0] ld_rdata,
 	input  wire        ld_ack,
 
-	output wire        busy            // a file or image is being loaded
+	output wire        busy,           // a file or image is being loaded
+
+	// loading screen and autostart (clk_sys)
+	output wire        loading,
+	output reg   [2:0] load_kind,      // 0 program, 1 cartridge, 2 disk, 3 tape, 4 ROM
+	output reg  [11:0] load_pct,       // 3 BCD digits
+	output reg         disk_inserted,  // pulse: drive 8 has a new disk
+	output reg         tape_loaded     // pulse: a tape image has been loaded
 );
 
 // Slot ids, kept in sync with data.json
@@ -401,8 +408,30 @@ initial begin
 end
 
 assign busy = ioctl_download || (state >= S_MT_START && state <= S_MT_PULSE);
+// D81s are not loaded, so they show no loading screen
+assign loading = ioctl_download || (state >= S_MT_KIND && state < S_MT_PULSE && dtype[drive] != DT_D81);
 
 wire [63:0] MAGIC = "GCR-1541";
+
+// Progress: work done is added x100 to acc; every time acc reaches the total, one
+// percent is counted (BCD) and the total taken off, so no divider is needed.
+reg        prog_clear;
+reg [31:0] prog_total;
+reg [13:0] prog_add;
+reg [38:0] prog_acc;
+always @(posedge clk_sys) begin
+	if (prog_clear) begin
+		prog_acc <= 39'd0;
+		load_pct <= 12'h000;
+	end else if (prog_add != 0)
+		prog_acc <= prog_acc + {25'd0, prog_add} * 39'd100;
+	else if (prog_total != 0 && prog_acc >= {7'd0, prog_total} && load_pct != 12'h100) begin
+		prog_acc <= prog_acc - {7'd0, prog_total};
+		if (load_pct[3:0] != 4'd9)      load_pct[3:0] <= load_pct[3:0] + 4'd1;
+		else if (load_pct[7:4] != 4'd9) load_pct[7:0] <= {load_pct[7:4] + 4'd1, 4'd0};
+		else                            load_pct <= 12'h100;
+	end
+end
 
 always @(posedge clk_sys) begin
 	integer i;
@@ -415,6 +444,10 @@ always @(posedge clk_sys) begin
 	gs_start <= 1'b0;
 	gs_done <= 1'b0;
 	gd_start <= 1'b0;
+	prog_clear <= 1'b0;
+	prog_add <= 14'd0;
+	disk_inserted <= 1'b0;
+	tape_loaded <= 1'b0;
 
 	for (i = 0; i < 6; i = i + 1)
 		if (upd_s[i][2] != upd_seen[i]) begin
@@ -478,6 +511,9 @@ always @(posedge clk_sys) begin
 				ioctl_file_ext <= slot == SLOT_CRT[2:0] ? ".CRT" : slot == SLOT_TAP[2:0] ? ".TAP" :
 				                  slot == SLOT_PRG[2:0] ? ".PRG" : ".ROM";
 				ioctl_download <= 1'b1;
+				load_kind <= slot == SLOT_PRG[2:0] ? 3'd0 : slot == SLOT_CRT[2:0] ? 3'd1 : slot == SLOT_TAP[2:0] ? 3'd3 : 3'd4;
+				prog_clear <= 1'b1;
+				prog_total <= size_74[slot];
 				n = (size_74[slot] > 32'd8192) ? 14'd8192 : size_74[slot][13:0];
 			end else
 				n = (fsize - foff > 32'd8192) ? 14'd8192 : 14'(fsize - foff);
@@ -517,6 +553,7 @@ always @(posedge clk_sys) begin
 			cnt <= 4'd0;
 			ioctl_addr <= ioctl_addr + 25'd1;
 			ci <= ci + 14'd1;
+			prog_add <= 14'd1;
 			if (ci + 14'd1 == clen) begin
 				foff <= foff + {18'd0, clen};
 				state <= (foff + {18'd0, clen} >= fsize) ? S_DL_END : S_DL_CHUNK;
@@ -529,6 +566,7 @@ always @(posedge clk_sys) begin
 		cnt <= cnt + 4'd1;
 		if (cnt == 4'd15) begin
 			ioctl_download <= 1'b0;
+			if (ioctl_index == 8'hC1) tape_loaded <= 1'b1;
 			state <= S_IDLE;
 		end
 	end
@@ -576,6 +614,9 @@ always @(posedge clk_sys) begin
 		img_size <= fsize;
 		ci <= 14'd0;
 		cnt <= 4'd0;
+		load_kind <= 3'd2;
+		prog_clear <= 1'b1;
+		prog_total <= fsize;
 		if (word[0]) begin
 			dtype[drive] <= DT_G64;
 			img_type <= 2'b01;
@@ -627,6 +668,7 @@ always @(posedge clk_sys) begin
 
 	S_G64_PUT: begin
 		ci <= ci + 14'd1;
+		prog_add <= 14'd1;
 		if (ci + 14'd1 == clen) begin
 			foff <= foff + {18'd0, clen};
 			if (foff + {18'd0, clen} >= fsize || foff + {18'd0, clen} >= 32'h200000) state <= S_MT_PULSE;
@@ -689,6 +731,7 @@ always @(posedge clk_sys) begin
 		if (hi == 10'd683) begin
 			tf <= 6'd0;
 			cur <= 21'd684;
+			prog_total <= {26'd0, dtracks[drive]};
 			state <= S_D64_TRK;
 		end else
 			state <= S_D64_HDR;
@@ -739,6 +782,7 @@ always @(posedge clk_sys) begin
 				cnt <= 4'd1;
 			end else if (!gs_busy && !gs_strobe && !gs_start) begin
 				tf <= tf + 6'd1;
+				prog_add <= 14'd1;
 				state <= S_D64_TRK;
 			end
 		end else if (ld_ack) begin
@@ -750,7 +794,10 @@ always @(posedge clk_sys) begin
 
 	S_MT_PULSE: begin
 		cnt <= cnt + 4'd1;
-		if (cnt == 4'd1) img_mounted[drive] <= 1'b1;
+		if (cnt == 4'd1) begin
+			img_mounted[drive] <= 1'b1;
+			if (!drive && img_size != 0) disk_inserted <= 1'b1;
+		end
 		if (cnt == 4'd9) begin
 			img_mounted <= 2'b00;
 			state <= S_IDLE;

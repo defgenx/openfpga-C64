@@ -11,12 +11,14 @@
 | Y       | F1                   | F3          | Return           | -                   |
 | L       | Run/Stop             | Run/Stop    | Run/Stop         | -                   |
 | R       | F7                   | F5          | F1               | -                   |
-| Select  | show the keyboard    | show the keyboard | show the keyboard | close        |
+| Select  | show the keyboard; hold ~0.6 s: swap the joystick port | show the keyboard | show the keyboard | close |
 | Start   | -> keys              | -> mouse    | -> joystick      | -                   |
 
 *Pad Mode* in the core settings picks the starting mode; Start cycles joystick -> keys -> mouse, and a
 label shows the new mode for ~2 s. Pad 1 is joystick port 2 unless *Joystick Port* says port 1 (it sets
-c64.sv's swap bit); pad 2 is the other port. In mouse mode the D-pad (or a Dock analog stick) drives
+c64.sv's swap bit); pad 2 is the other port. Holding Select swaps the ports without the menu (label
+PORT 1 / PORT 2); a short press, released before ~0.6 s, opens the keyboard. A change of *Joystick Port*
+in the menu cancels the swap. In mouse mode the D-pad (or a Dock analog stick) drives
 C64_MiSTer's 1351 emulation on port 1. Dock pads 3 and 4 are the user port 4-player adapter, as on MiSTer.
 
 ## On-screen keyboard
@@ -30,6 +32,21 @@ Two-letter labels: `RS` Run/Stop, `RE` Restore, `HM` Clr/Home, `DL` Inst/Del, `I
 The layout is `LAYOUT` in `tools/gen_osk.py`, which generates `src/fpga/core/osk_layout.svh` and the font
 ROM `osk_font.hex` (font8x8 by Daniel Hepper, public domain, plus arrow and pound glyphs). Re-run it after
 editing: `python3 tools/gen_osk.py tools/font8x8_basic.h`.
+
+## Autostart
+
+`autostart.sv` saves typing on the handheld. Picking a disk (drive 8) or a tape arms it for 8 s; if the
+C64 reaches the BASIC prompt in that time (it may still be booting), it types, through `hid_c64`:
+
+* disk: `LOAD"*",8,1` Return; when the prompt is back after the load, `RUN` Return;
+* tape: Shift + Run/Stop, which makes the KERNAL load and run the tape's first program.
+
+"At the prompt" is `c64_top`'s `at_prompt`: the CPU spending over 1/16 of a ~33 ms window in the
+KERNAL's keyboard wait loop at `$E5CD`–`$E5D5`, which is the same in the standard, Japanese and
+DolphinDOS kernals. A game never runs it, so a disk swapped in mid-game is only inserted. Keys are held
+~60 ms (several KERNAL scans), Shift goes down before the key it modifies, and typing waits for the
+drive's `disk_ready` (keys are ignored while a disk is being swapped). *Autostart = Off* disables it; a
+reset cancels a pending request.
 
 ## Dock keyboard and mouse
 
