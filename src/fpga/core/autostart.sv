@@ -3,7 +3,8 @@
 //
 // A disk or tape picked from the Pocket menu arms a request. If the C64 reaches the
 // BASIC prompt within ARM_TIME (it may still be booting), the commands are typed:
-//   disk: LOAD"*",8,1 <RETURN>, then RUN <RETURN> once the prompt is back
+//   disk: LOAD"*",8,1 <RETURN>, then RUN <RETURN> once BASIC's prompt is back (not when the
+//         loaded program started itself and waits for a key: RUN would be typed into it)
 //   tape: SHIFT + RUN/STOP (the KERNAL loads and runs the first program)
 // A disk swapped in during a game never sees the prompt, so it is only inserted.
 // Keys are HID usages for hid_c64; see docs/input.md.
@@ -21,6 +22,7 @@ module autostart #(
 	input  wire        disk_inserted,  // pulse
 	input  wire        tape_loaded,    // pulse
 	input  wire        at_prompt,      // the KERNAL is waiting for a key
+	input  wire        basic_main,     // BASIC's direct-mode main loop ran
 	input  wire        disk_ready,     // keys are ignored while a disk is being swapped
 
 	output reg   [7:0] key,            // HID usage held down, 0 = none
@@ -59,8 +61,10 @@ reg  [2:0] state = S_IDLE;
 reg  [4:0] pos;
 reg        is_disk;            // after the LOAD line, RUN follows
 reg        load_started;
+reg        main_seen;          // BASIC's main loop ran after the load started
 reg [31:0] timer;
 reg [31:0] settle;
+reg [31:0] ready_settle;
 wire [8:0] cur_text  = text(pos);
 wire [8:0] next_text = text(pos + 5'd1);
 
@@ -68,11 +72,14 @@ assign busy = state == S_TYPE || state == S_GAP;
 
 // at_prompt held for SETTLE
 wire prompt_stable = at_prompt && settle >= SETTLE;
+// disk_ready held for SETTLE since the insert: it only drops a few clocks after disk_inserted
+wire ready_stable = disk_ready && ready_settle >= SETTLE;
 
 initial begin key = 8'h00; shift = 1'b0; end
 
 always @(posedge clk) begin
 	settle <= at_prompt ? (settle < SETTLE ? settle + 1 : settle) : 32'd0;
+	ready_settle <= disk_ready && !disk_inserted ? (ready_settle < SETTLE ? ready_settle + 1 : ready_settle) : 32'd0;
 
 	if (reset || !enable) begin
 		state <= S_IDLE;
@@ -92,7 +99,7 @@ always @(posedge clk) begin
 		S_ARMED: begin
 			timer <= timer + 1;
 			if (timer >= ARM_TIME) state <= S_IDLE;
-			else if (prompt_stable && disk_ready) begin
+			else if (prompt_stable && ready_stable) begin
 				pos <= is_disk ? T_LOAD : T_TAPE;
 				timer <= 32'd0;
 				state <= S_TYPE;
@@ -132,11 +139,13 @@ always @(posedge clk) begin
 		S_LOADING: begin
 			timer <= timer + 1;
 			if (!at_prompt) load_started <= 1'b1;
+			if (!load_started) main_seen <= 1'b0;
+			else if (basic_main) main_seen <= 1'b1;
 			if (timer >= LOAD_WAIT) state <= S_IDLE;
 			else if (load_started && prompt_stable) begin
 				pos <= T_RUN;
 				timer <= 32'd0;
-				state <= S_TYPE;
+				state <= main_seen ? S_TYPE : S_IDLE;
 			end
 		end
 

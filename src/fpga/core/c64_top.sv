@@ -119,7 +119,8 @@ module c64_top
 	output  [1:0] drive_led,
 	output        tape_loaded,
 	output        disk_ready_out,  // the drive accepts keys again after a disk swap
-	output reg    at_prompt        // the KERNAL is waiting for a key (BASIC prompt)
+	output reg    at_prompt,       // the KERNAL is waiting for a key (BASIC prompt)
+	output reg    basic_main       // BASIC's direct-mode main loop ran ($A483)
 );
 
 wire [7:0]  drv_ddram_burstcnt;
@@ -1373,6 +1374,10 @@ always @(posedge clk_sys) begin
 		hits <= 0;
 	end
 end
+
+// $0302 (IMAIN) points here in every bundled ROM; a program that starts itself after LOAD never runs it
+initial basic_main = 1'b0;
+always @(posedge clk_sys) basic_main <= c64_addr == 16'hA483;
 
 
 endmodule

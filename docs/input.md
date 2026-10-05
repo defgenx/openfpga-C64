@@ -38,14 +38,17 @@ editing: `python3 tools/gen_osk.py tools/font8x8_basic.h`.
 `autostart.sv` saves typing on the handheld. Picking a disk (drive 8) or a tape arms it for 8 s; if the
 C64 reaches the BASIC prompt in that time (it may still be booting), it types, through `hid_c64`:
 
-* disk: `LOAD"*",8,1` Return; when the prompt is back after the load, `RUN` Return;
+* disk: `LOAD"*",8,1` Return; when BASIC's prompt is back after the load, `RUN` Return. A program that
+  starts itself after the load and then waits for a key (a trainer's "lives Y/N") gets no `RUN`: it is
+  typed only if the CPU ran BASIC's direct-mode main loop at `$A483` (where `$0302` points) after the load;
 * tape: Shift + Run/Stop, which makes the KERNAL load and run the tape's first program.
 
 "At the prompt" is `c64_top`'s `at_prompt`: the CPU spending over 1/16 of a ~33 ms window in the
 KERNAL's keyboard wait loop at `$E5CD`–`$E5D5`, which is the same in the standard, Japanese and
 DolphinDOS kernals. A game never runs it, so a disk swapped in mid-game is only inserted. Keys are held
-~60 ms (several KERNAL scans), Shift goes down before the key it modifies, and typing waits for the
-drive's `disk_ready` (keys are ignored while a disk is being swapped). *Autostart = Off* disables it; a
+~60 ms (several KERNAL scans), Shift goes down before the key it modifies, and typing waits until the
+drive's `disk_ready` has been high for 250 ms since the disk was picked (keys are ignored while a disk is
+being swapped, and `disk_ready` only drops a few clocks after the insert). *Autostart = Off* disables it; a
 reset cancels a pending request.
 
 ## Dock keyboard and mouse

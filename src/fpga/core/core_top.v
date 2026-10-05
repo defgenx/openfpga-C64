@@ -982,7 +982,7 @@ assign status[84:82]  = palette_s;
 assign status[86:85]  = drvosd_s;                    // drives OSD
 assign status[127:87] = 41'd0;
 
-wire        c64_disk_ready, c64_at_prompt;
+wire        c64_disk_ready, c64_at_prompt, c64_basic_main;
 wire  [7:0] c64_r, c64_g, c64_b;
 wire        c64_hs, c64_vs, c64_hb, c64_vb, c64_ntsc;
 wire [15:0] audio_l, audio_r;
@@ -1071,7 +1071,8 @@ c64_top c64 (
 	.drive_led        ( ),
 	.tape_loaded      ( ),
 	.disk_ready_out   ( c64_disk_ready ),
-	.at_prompt        ( c64_at_prompt )
+	.at_prompt        ( c64_at_prompt ),
+	.basic_main       ( c64_basic_main )
 );
 
 /* ------------------------------------------------------------------------------ */
@@ -1085,6 +1086,7 @@ autostart autostart (
 	.disk_inserted ( media_disk_inserted ),
 	.tape_loaded   ( media_tape_loaded ),
 	.at_prompt     ( c64_at_prompt ),
+	.basic_main    ( c64_basic_main ),
 	.disk_ready    ( c64_disk_ready ),
 	.key           ( auto_key ),
 	.shift         ( auto_shift ),
