@@ -290,7 +290,7 @@ assign vpll_feed = 1'bZ;
 /* ------------------------------------ Clocks ---------------------------------- */
 /* ------------------------------------------------------------------------------ */
 
-wire clk_sys, clk64, clk48;
+wire clk_sys, clk_sys_90, clk64, clk48;
 wire pll_locked;
 wire pll_locked_s;
 synch_3 s_lock(pll_locked, pll_locked_s, clk_74a);
@@ -304,6 +304,7 @@ pll_c64 pll (
 	.outclk_0          ( clk48 ),
 	.outclk_1          ( clk64 ),
 	.outclk_2          ( clk_sys ),
+	.outclk_3          ( clk_sys_90 ),
 	.locked            ( pll_locked ),
 	.reconfig_to_pll   ( reconfig_to_pll ),
 	.reconfig_from_pll ( reconfig_from_pll )
@@ -356,11 +357,6 @@ always @(posedge clk_74a) begin
 		endcase
 	end
 end
-
-// APF video clock is clk_sys; its 90 degree copy toggles on clk64's falling edges
-// (90 or 270 degrees, either centres the scaler's DDR samples)
-reg clk_sys_90 = 1'b0;
-always @(negedge clk64) clk_sys_90 <= ~clk_sys_90;
 
 /* ------------------------------------------------------------------------------ */
 /* --------------------------- Host/target commands ----------------------------- */

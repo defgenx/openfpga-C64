@@ -8,7 +8,7 @@ REU, tape, 1541/1581 drives) — is used **unmodified**, as a git submodule pinn
 ```
 apf_top (Analogue)
 └── core_top                      src/fpga/core/core_top.v
-    ├── pll_c64 + pll_cfg         74.25 MHz -> clk_sys 31.53 (PAL) / 32.73 (NTSC), clk64, clk48
+    ├── pll_c64 + pll_cfg         74.25 MHz -> clk_sys 31.53 (PAL) / 32.73 (NTSC), clk_sys_90, clk64, clk48
     ├── core_bridge_cmd           Analogue host/target command handler (template, unchanged)
     ├── c64_media                 files and disk images over target commands (stands in for the ARM)
     │   ├── gcr_synth             D64 track -> GCR (Main_MiSTer's c64_synthesize_gcr_track)
@@ -102,10 +102,11 @@ asynchronous mode; one 64-bit DDRAM word takes four accesses (~0.6 µs), so a wh
 ## Clocks
 
 `pll_c64` is MiSTer's reconfigurable fractional PLL re-targeted to the 74.25 MHz reference: VCO =
-74.25 × 7.643140 MHz (÷2 = 567.503 MHz), outputs ÷12 clk48, ÷9 clk64, ÷18 clk_sys. NTSC rewrites only
+74.25 × 7.643140 MHz (÷2 = 567.503 MHz), outputs ÷12 clk48, ÷9 clk64, ÷18 clk_sys and clk_sys_90. NTSC rewrites only
 the fractional K (register 7) with the values in `pll_c64.v`, after the same 150 ms settle as c64.sv; the
-C64 is reset when the standard changes. The APF video clock is clk_sys; `video_rgb_clock_90` is a register
-toggled on clk64's falling edges (90° or 270°, either centres the scaler's DDR samples).
+C64 is reset when the standard changes. The APF video clock is clk_sys; `video_rgb_clock_90` is a fourth
+PLL output, ÷18 shifted by 4.5 VCO cycles (90°). It must come from the PLL: the scaler samples the 12-bit
+DDR video bus on its edges, and a clock made in logic has no fixed phase, which garbles the whole picture.
 
 ## Settings
 
@@ -142,5 +143,5 @@ enabled when a disk is mounted, PRG autorun, tape autoplay.
 shows, should a smaller drive build make room for it.
 
 User port RS-232 (UP9600 / VIC-1011), external IEC and SNAC, paddles, EasyFlash save-back
-(`ioctl_upload`), the tape ADC input, `.t64` (MiSTer converts it on the ARM) and the drive overlay's DDRAM
+(`ioctl_upload`), the tape ADC input, `.t64` (MiSTer converts it on the ARM; here `convert-t64` / `tools/t64_to_prg.py` does it once on a computer) and the drive overlay's DDRAM
 debug view are tied off in `c64_top.sv` / `core_top.v`.

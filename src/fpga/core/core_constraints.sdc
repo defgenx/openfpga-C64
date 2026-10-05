@@ -1,15 +1,12 @@
 #
 # user core constraints
 #
-# pll_c64 outputs (derive_pll_clocks): [0] clk48, [1] clk64, [2] clk_sys. They share
+# pll_c64 outputs (derive_pll_clocks): [0] clk48, [1] clk64, [2] clk_sys, [3] clk_sys_90. They share
 # one VCO, so they stay in one clock group with the clocks derived from clk64.
 #
 
 set PLL_OUT "ic|pll|altera_pll_i|*"
 set CLK64   [get_pins -compatibility_mode "$PLL_OUT\[1\].*|divclk"]
-
-# APF video clock 90: a register toggled on clk64's falling edges (core_top.v)
-create_generated_clock -name clk_sys_90 -source $CLK64 -edges {2 4 6} [get_pins -compatibility_mode {ic|clk_sys_90|q}]
 
 # SDRAM: sdram.v drives dram_clk as an inverted clk64 through a DDIO register,
 # as on MiSTer, so the pin is an inverted copy of clk64
@@ -31,4 +28,4 @@ set_clock_groups -asynchronous \
  -group { bridge_spiclk } \
  -group { clk_74a } \
  -group { clk_74b } \
- -group [get_clocks "$PLL_OUT clk_sys_90 dram_clk_pin"]
+ -group [get_clocks "$PLL_OUT dram_clk_pin"]

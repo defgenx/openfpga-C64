@@ -63,6 +63,11 @@ Installer options:
 | `.tap`              | Tape        | at the BASIC prompt: loaded and run (Shift + Run/Stop typed for you)  |
 | `.rom` `.bin`       | System ROM  | replaces the C64 + 1541 ROMs (MiSTer's format: BASIC + KERNAL + 1541) |
 
+`.t64` files are not listed (the Pocket shows only the extensions above). A `.t64` wraps a program: with
+the card in your computer, double-click **`convert-t64.command`** (macOS) or **`convert-t64.bat`**
+(Windows). It finds the card and writes a `.prg` next to every `.t64` in `Assets/c64/common` and its
+subfolders; load those as a Program. Existing `.prg` files are kept, so run it again after adding games.
+
 Autostart only types when the C64 is at the BASIC prompt, so a disk picked while a game asks for
 "side 2" is simply swapped in. Set *Autostart* to *Off* to always insert disks without typing. Disks and
 the System ROM are remembered and come back at the next start (and autostart then runs the disk);
@@ -129,6 +134,7 @@ Settings are saved on the card (`Settings/defgenx.C64/`) and come back at the ne
 | **A disk did not start by itself** | The C64 was not at the BASIC prompt (or *Autostart* is off): *Reset*, then pick the disk again, or type `LOAD"*",8,1` and `RUN`. |
 | **A game runs too fast / music too high** | It is an NTSC game on PAL or the reverse: change *Video*. |
 | **A game cannot save** | *Write Protect* is on (re-insert the disk after changing it). |
+| **A folder of games looks empty** | The files are not a type the core loads (`.t64`, `.zip`, …): double-click `convert-t64.command` / `.bat` for `.t64`, unzip archives. |
 | **A protected disk does not load** | Try the `.g64` version of the disk; `.d64` cannot hold copy protection. |
 
 When reporting a problem, please say which version (`version` in `Cores/defgenx.C64/core.json`), the

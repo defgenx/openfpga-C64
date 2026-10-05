@@ -15,6 +15,7 @@ module pll_c64 (
 	output wire        outclk_0,   // clk48
 	output wire        outclk_1,   // clk64
 	output wire        outclk_2,   // clk_sys
+	output wire        outclk_3,   // clk_sys, 90 degrees (APF video_rgb_clock_90)
 	output wire        locked,
 	input  wire [63:0] reconfig_to_pll,
 	output wire [63:0] reconfig_from_pll
@@ -26,7 +27,7 @@ module pll_c64 (
 		.pll_fractional_cout(32),
 		.pll_dsm_out_sel("1st_order"),
 		.operation_mode("direct"),
-		.number_of_clocks(3),
+		.number_of_clocks(4),
 		.output_clock_frequency0("47.291931 MHz"),
 		.phase_shift0("0 ps"),
 		.duty_cycle0(50),
@@ -36,8 +37,8 @@ module pll_c64 (
 		.output_clock_frequency2("31.527954 MHz"),
 		.phase_shift2("0 ps"),
 		.duty_cycle2(50),
-		.output_clock_frequency3("0 MHz"),
-		.phase_shift3("0 ps"),
+		.output_clock_frequency3("31.527954 MHz"),
+		.phase_shift3("7930 ps"),
 		.duty_cycle3(50),
 		.output_clock_frequency4("0 MHz"),
 		.phase_shift4("0 ps"),
@@ -112,12 +113,12 @@ module pll_c64 (
 		.c_cnt_in_src2("ph_mux_clk"),
 		.c_cnt_bypass_en2("false"),
 		.c_cnt_odd_div_duty_en2("false"),
-		.c_cnt_hi_div3(1),
-		.c_cnt_lo_div3(1),
-		.c_cnt_prst3(1),
-		.c_cnt_ph_mux_prst3(0),
+		.c_cnt_hi_div3(9),
+		.c_cnt_lo_div3(9),
+		.c_cnt_prst3(5),
+		.c_cnt_ph_mux_prst3(4),
 		.c_cnt_in_src3("ph_mux_clk"),
-		.c_cnt_bypass_en3("true"),
+		.c_cnt_bypass_en3("false"),
 		.c_cnt_odd_div_duty_en3("false"),
 		.c_cnt_hi_div4(1),
 		.c_cnt_lo_div4(1),
@@ -229,7 +230,7 @@ module pll_c64 (
 		.pll_slf_rst("true")
 	) altera_pll_i (
 		.rst	(rst),
-		.outclk	({outclk_2, outclk_1, outclk_0}),
+		.outclk	({outclk_3, outclk_2, outclk_1, outclk_0}),
 		.locked	(locked),
 		.reconfig_to_pll	(reconfig_to_pll),
 		.fboutclk	( ),
