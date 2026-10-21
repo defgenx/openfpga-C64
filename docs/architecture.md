@@ -51,11 +51,22 @@ requests cross as a toggle handshake whose parameters are held stable until the 
 
 | Slot | File        | ioctl index | Handling |
 |------|-------------|-------------|----------|
-| 0    | Program     | `0x01`      | streamed; c64.sv resets, waits for the kernal, injects the PRG and types RUN |
+| 0    | Program     | `0x01`      | streamed; c64.sv resets, waits for the kernal, injects the PRG and types RUN. A T64 is streamed as a PRG (below) |
 | 1    | Cartridge   | `0x41`      | streamed (file extension `.CRT`) |
 | 2    | Disk        | –           | G64 / D64 / D81 by content (below), drive 8 |
 | 4    | Tape        | `0xC1`      | streamed into SDRAM; the tape subsystem plays it |
 | 5    | System ROM  | `0x08`      | streamed: first 16 KB to the C64 ROM, the rest to the 1541 |
+
+A Program file is a **T64** if it starts with `C64` and a space or `S` (`C64 tape image file`, `C64S tape
+file`). The directory (32-byte entries from `$40`, as many as the larger of the counts at `$22` and `$24`,
+those within the first 8 KB) gives the program: the type-1 entry with the lowest data offset. Its length is
+end − start, unless that is 0 or runs past the next entry's data or the file end, which then bound it
+(the end address is often wrong in T64s made by old tools); `tools/t64_to_prg.py` does the same. The load
+address is sent as the PRG's first two bytes, then the data from that offset.
+
+`core_bridge_cmd` holds `dataslot_update` (a file picked while the core runs) for two `clk_74a` cycles, so
+`c64_media` acts on its rising edge. On the download port, `ioctl_data` stays put until `ioctl_wait` drops:
+`c64_top` stores a byte only at its next `io_cycle`, as MiSTer's `hps_io` expects.
 
 A disk is a **G64** if it starts with `GCR-1541`, a **D81** if it is at least 819,200 bytes, otherwise a
 **D64** (35, 40 or 42 tracks by size). Then:
@@ -143,5 +154,6 @@ enabled when a disk is mounted, PRG autorun, tape autoplay.
 shows, should a smaller drive build make room for it.
 
 User port RS-232 (UP9600 / VIC-1011), external IEC and SNAC, paddles, EasyFlash save-back
-(`ioctl_upload`), the tape ADC input, `.t64` (MiSTer converts it on the ARM; here `convert-t64` / `tools/t64_to_prg.py` does it once on a computer) and the drive overlay's DDRAM
+(`ioctl_upload`), the tape ADC input, all but the first program of a `.t64` (`convert-t64` /
+`tools/t64_to_prg.py` extracts them all on a computer) and the drive overlay's DDRAM
 debug view are tied off in `c64_top.sv` / `core_top.v`.

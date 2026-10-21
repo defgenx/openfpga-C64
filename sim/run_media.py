@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Run media_tb and check every transfer against gcr_ref (Main_MiSTer's algorithms)."""
 import random
+import struct
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import gcr_ref
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
+import t64_to_prg
 
 HERE = Path(__file__).parent
 W = HERE / "media"
@@ -33,6 +37,40 @@ def rotate_bits(data, k):
     n = len(data) * 8
     return (((v << k) | (v >> (n - k))) & ((1 << n) - 1)).to_bytes(len(data), "big")
 
+
+def t64(sig, ents, blobs, size):
+    """A T64 image: 64-byte header, 32-byte directory entries (type, start, end, offset), data blobs by offset."""
+    img = bytearray(size)
+    img[:len(sig)] = sig
+    img[0x20:0x22] = b"\x01\x01"
+    struct.pack_into("<HH", img, 0x22, len(ents), len(ents))
+    img[0x28:0x28 + 4] = b"TEST"
+    for i, (typ, start, end, off) in enumerate(ents):
+        struct.pack_into("<BBHHHI", img, 0x40 + 32 * i, typ, 0x82 if typ else 0, start, end, 0, off)
+    for off, b in blobs.items():
+        img[off:off + len(b)] = b
+    return bytes(img)
+
+
+SIG_A = b"C64 tape image file"
+SIG_S = b"C64S tape file"
+pa, pb, pc1, pc2, pc3, pd = rnd(500), rnd(300), rnd(0x300), rnd(0x200), rnd(0x100), rnd(80)
+# (a) normal; (b) wrong end $C3C6: capped by the file end; (c) entries out of offset order and a free one:
+# the lowest offset wins, its (too long) end is capped by the next offset; (d) C64S signature
+T_A = t64(SIG_A, [(1, 0x0801, 0x0801 + len(pa), 0x60)], {0x60: pa}, 0x60 + len(pa))
+T_B = t64(SIG_A, [(1, 0x0801, 0xC3C6, 0x60)], {0x60: pb}, 0x60 + len(pb))
+T_C = t64(SIG_A, [(1, 0x1000, 0x1000 + 0x100, 0x180), (1, 0x0801, 0x0801 + 0x300, 0xC0),
+                  (0, 0x2000, 0x2100, 0x80), (1, 0xC000, 0xC100, 0x280)],
+          {0xC0: pc1[:0xC0], 0x180: pc2[:0x100], 0x280: pc3}, 0x280 + len(pc3))
+T_D = t64(SIG_S, [(1, 0x0801, 0x0801 + len(pd), 0x60)], {0x60: pd}, 0x60 + len(pd))
+P_E = b"C64X" + rnd(196)                  # a plain PRG (load address $3643) that starts like a T64
+T_F = t64(SIG_A, [(0, 0x0801, 0x0900, 0x60), (1, 0x0801, 0x0900, 0)], {}, 0x100)   # free entry, offset 0
+cases = [("t64: normal, \"C64 tape image file\"", T_A), ("t64: wrong end address, capped by the file end", T_B),
+         ("t64: 3 entries out of order + free, lowest offset capped by next", T_C),
+         ("t64: \"C64S tape file\" signature", T_D), ("prg starting with \"C64X\" streamed unchanged", P_E),
+         ("t64: no valid entry, no download", T_F)]
+for k, (_, d) in enumerate(cases, 1):
+    hexfile(W / f"case{k}.hex", d)
 
 prg = rnd(3000)
 d64 = bytearray(rnd(174848))
@@ -61,7 +99,7 @@ files = [CORE / f for f in ("c64_media.sv", "gcr_synth.sv", "gcr_decode.sv", "dd
 subprocess.run(["iverilog", "-g2012", "-o", str(W / "media_tb.vvp"), str(HERE / "media_tb.sv")] + [str(f) for f in files],
                check=True)
 out = subprocess.run(["vvp", "-n", str(W / "media_tb.vvp"), f"+dir={W}", f"+prg={len(prg)}", f"+d8={len(d64)}",
-                      f"+d9={len(g64)}"], check=True, capture_output=True, text=True).stdout
+                      f"+d9={len(g64)}"] + [f"+t{k}={len(d)}" for k, (_, d) in enumerate(cases, 1)], check=True, capture_output=True, text=True).stdout
 print("".join(l + "\n" for l in out.splitlines() if not l.startswith(("Instantiated", "  ", "INFO", "\t"))))
 
 fail = []
@@ -75,6 +113,24 @@ lines = [l.split() for l in (W / "ioctl.txt").read_text().splitlines()]
 check("prg: index 01, every byte in order",
       len(lines) == len(prg) and all(l[0] == "01" and int(l[1], 16) == i and int(l[2], 16) == prg[i]
                                      for i, l in enumerate(lines)))
+
+
+def stream_ok(k, exp):
+    ls = [l.split() for l in (W / f"ioctl_c{k}.txt").read_text().splitlines()]
+    return len(ls) == len(exp) and all(l[0] == "01" and int(l[1], 16) == i and int(l[2], 16) == exp[i]
+                                       for i, l in enumerate(ls))
+
+
+for k, (name, d) in enumerate(cases, 1):
+    if d is P_E:
+        exp = d
+    else:
+        try:
+            start, payload = t64_to_prg.entries(d)[0]
+            exp = struct.pack("<H", start) + payload
+        except ValueError:
+            exp = b""
+    check(f"{name} ({len(exp)} B)", stream_ok(k, exp))
 
 dd = b"".join(int(x.replace("x", "0"), 16).to_bytes(8, "little") for x in (W / "d64_ddram.hex").read_text().split())
 exp = gcr_ref.synth_g64(bytes(d64))

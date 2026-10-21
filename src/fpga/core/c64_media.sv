@@ -5,6 +5,7 @@
 // writes disks back with Dataslot Write, so all transfers are paced by the core.
 // It stands in for what MiSTer's ARM does for the C64 core:
 //   - PRG / CRT / TAP / System ROM are streamed into c64_top's ioctl download port;
+//     a T64 in the Program slot is streamed as a PRG of its first program;
 //   - G64 images are copied into PSRAM, D64 images are converted to G64 there
 //     (gcr_synth), where the 1541s read them through the DDRAM port;
 //   - D81 sectors are served to the 1581 on sd_rd / sd_wr;
@@ -146,6 +147,7 @@ always @(posedge clk_74a)
 
 reg        boot_ready_74;
 reg [31:0] size_74[6];
+reg        dataslot_update_q;            // core_bridge_cmd holds dataslot_update for 2 clocks
 reg  [5:0] upd_t_74;             // toggles when a slot has a new file
 
 reg  [5:0] dt_idx;
@@ -184,7 +186,8 @@ always @(posedge clk_74a) begin
 		endcase
 	end
 
-	if (dataslot_update && dataslot_update_id < 16'd6) begin
+	dataslot_update_q <= dataslot_update;
+	if (dataslot_update && !dataslot_update_q && dataslot_update_id < 16'd6) begin
 		size_74[dataslot_update_id[2:0]] <= dataslot_update_size;
 		upd_t_74[dataslot_update_id[2:0]] <= ~upd_t_74[dataslot_update_id[2:0]];
 	end
@@ -360,7 +363,15 @@ localparam [5:0]
 	S_WR_G64_CP = 6'd27,
 	S_WR_D64    = 6'd28,
 	S_WR_D64_WR = 6'd29,
-	S_SD_END    = 6'd30;
+	S_SD_END    = 6'd30,
+	// T64 in the Program slot
+	S_PRG_PROBE = 6'd31,
+	S_T64_SIG   = 6'd32,
+	S_T64_CNT   = 6'd33,
+	S_T64_ENT   = 6'd34,
+	S_T64_CMP   = 6'd35,
+	S_T64_PICK  = 6'd36,
+	S_DL_HDR    = 6'd37;
 
 reg  [5:0] state;
 reg  [5:0] ret;
@@ -380,6 +391,25 @@ reg [13:0] tsize;                // flushed track length
 reg [31:0] g64_off;
 reg [15:0] g64_max;
 reg  [4:0] sec;
+
+// T64: the type-1 entry with the lowest data offset is the program; the next offset
+// above it (or the file end) bounds its length, as tools/t64_to_prg.py does
+reg        t64;                  // the Program slot holds a T64: stream dl_len bytes from dl_base
+reg [31:0] dl_base, dl_len;
+reg  [7:0] t64_i;                // directory entry
+reg  [3:0] t64_k;                // byte in the entry
+reg [15:0] t64_max, t64_used;
+reg  [7:0] e_type;
+reg [15:0] e_start, e_end;
+reg [31:0] e_off;
+reg        t64_have1, t64_have2, t64_hb;
+reg [15:0] t64_start, t64_end;
+reg [31:0] t64_off1, t64_off2;
+wire [15:0] t64_n     = (t64_max > t64_used) ? t64_max : t64_used;
+wire [13:0] t64_eaddr = 14'h40 + {1'b0, t64_i, 5'd0};
+wire [15:0] t64_dlen  = t64_end - t64_start;
+wire [31:0] t64_limit = t64_have2 ? t64_off2 : fsize;
+wire [31:0] t64_room  = 32'h10000 - {16'd0, t64_start};
 
 wire [21:0] dbase = {drive, 21'd0};   // 2 MB per drive
 wire [13:0] tf_gcr_size = d64_gcr_size(tf);
@@ -436,6 +466,7 @@ end
 always @(posedge clk_sys) begin
 	integer i;
 	reg [13:0] n;
+	reg [31:0] len;
 
 	ioctl_wr <= 1'b0;
 	wbuf_we <= 1'b0;
@@ -488,9 +519,11 @@ always @(posedge clk_sys) begin
 		end else if (pending[SLOT_ROM] || pending[SLOT_CRT] || pending[SLOT_TAP] || pending[SLOT_PRG]) begin
 			slot <= pending[SLOT_ROM] ? SLOT_ROM[2:0] : pending[SLOT_CRT] ? SLOT_CRT[2:0] :
 			        pending[SLOT_TAP] ? SLOT_TAP[2:0] : SLOT_PRG[2:0];
-			state <= S_DL_CHUNK;
+			state <= (pending[SLOT_ROM] || pending[SLOT_CRT] || pending[SLOT_TAP]) ? S_DL_CHUNK : S_PRG_PROBE;
 			foff <= 32'd0;
 			ioctl_addr <= 25'd0;
+			t64 <= 1'b0;
+			dl_base <= 32'd0;
 		end
 	end
 
@@ -504,7 +537,7 @@ always @(posedge clk_sys) begin
 			state <= S_IDLE;
 		end else begin
 			if (foff == 32'd0) begin
-				fsize <= size_74[slot];
+				fsize <= t64 ? dl_len : size_74[slot];
 				pending[slot] <= 1'b0;
 				ioctl_index <= slot == SLOT_PRG[2:0] ? 8'h01 : slot == SLOT_CRT[2:0] ? 8'h41 :
 				               slot == SLOT_TAP[2:0] ? 8'hC1 : 8'h08;
@@ -513,19 +546,20 @@ always @(posedge clk_sys) begin
 				ioctl_download <= 1'b1;
 				load_kind <= slot == SLOT_PRG[2:0] ? 3'd0 : slot == SLOT_CRT[2:0] ? 3'd1 : slot == SLOT_TAP[2:0] ? 3'd3 : 3'd4;
 				prog_clear <= 1'b1;
-				prog_total <= size_74[slot];
-				n = (size_74[slot] > 32'd8192) ? 14'd8192 : size_74[slot][13:0];
+				prog_total <= t64 ? dl_len : size_74[slot];
+				len = t64 ? dl_len : size_74[slot];
+				n = (len > 32'd8192) ? 14'd8192 : len[13:0];
 			end else
 				n = (fsize - foff > 32'd8192) ? 14'd8192 : 14'(fsize - foff);
 			clen <= n;
 			ci <= 14'd0;
 			req_write      <= 1'b0;
 			req_slot       <= {13'd0, slot};
-			req_offset     <= foff;
+			req_offset     <= dl_base + foff;
 			req_length     <= {18'd0, n};
 			req_bridgeaddr <= RBUF_ADDR;
 			req_t          <= ~req_t;
-			ret            <= S_DL_BYTE;
+			ret            <= (foff == 32'd0 && t64) ? S_DL_HDR : S_DL_BYTE;
 			cnt            <= 4'd0;
 			state          <= S_REQ_WAIT;
 		end
@@ -534,9 +568,13 @@ always @(posedge clk_sys) begin
 	S_DL_BYTE: begin
 		cnt <= cnt + 4'd1;
 		if (cnt == 4'd0) rbuf_raddr <= ci[12:0];
+		// c64_top takes ioctl_data at its next io_cycle, while ioctl_wait is high
 		if (cnt == 4'd2) begin
-			ioctl_data <= rbuf_q;
-			state <= S_DL_SEND;
+			if (ioctl_wait) cnt <= 4'd2;
+			else begin
+				ioctl_data <= rbuf_q;
+				state <= S_DL_SEND;
+			end
 		end
 	end
 
@@ -568,6 +606,156 @@ always @(posedge clk_sys) begin
 			ioctl_download <= 1'b0;
 			if (ioctl_index == 8'hC1) tape_loaded <= 1'b1;
 			state <= S_IDLE;
+		end
+	end
+
+	// ---------------- Program slot: PRG, or T64 streamed as a PRG ----------------
+	S_PRG_PROBE: if (!req_busy) begin
+		if (size_74[SLOT_PRG] < 32'd64) state <= S_DL_CHUNK;
+		else begin
+			n = (size_74[SLOT_PRG] > 32'd8192) ? 14'd8192 : size_74[SLOT_PRG][13:0];
+			clen           <= n;
+			fsize          <= size_74[SLOT_PRG];
+			req_write      <= 1'b0;
+			req_slot       <= SLOT_PRG;
+			req_offset     <= 32'd0;
+			req_length     <= {18'd0, n};
+			req_bridgeaddr <= RBUF_ADDR;
+			req_t          <= ~req_t;
+			ret            <= S_T64_SIG;
+			ci             <= 14'd0;
+			cnt            <= 4'd0;
+			word           <= 32'd1;     // signature still matching
+			state          <= S_REQ_WAIT;
+		end
+	end
+
+	// T64 images start with "C64 tape image file", "C64S tape file" or "C64S tape image file"
+	S_T64_SIG: begin
+		cnt <= cnt + 4'd1;
+		if (cnt == 4'd0) rbuf_raddr <= ci[12:0];
+		if (cnt == 4'd2) begin
+			cnt <= 4'd0;
+			case (ci[1:0])
+				2'd0: if (rbuf_q != "C") word[0] <= 1'b0;
+				2'd1: if (rbuf_q != "6") word[0] <= 1'b0;
+				2'd2: if (rbuf_q != "4") word[0] <= 1'b0;
+				2'd3: if (rbuf_q != " " && rbuf_q != "S") word[0] <= 1'b0;
+			endcase
+			ci <= ci + 14'd1;
+			if (ci == 14'd3) begin
+				t64_k <= 4'd0;
+				state <= S_T64_CNT;
+			end
+		end
+	end
+
+	// directory size: max entries ($22) and used entries ($24)
+	S_T64_CNT: begin
+		if (!word[0]) state <= S_DL_CHUNK;          // a plain PRG
+		else begin
+			cnt <= cnt + 4'd1;
+			if (cnt == 4'd0) rbuf_raddr <= 13'h22 + {9'd0, t64_k};
+			if (cnt == 4'd2) begin
+				cnt <= 4'd0;
+				case (t64_k[1:0])
+					2'd0: t64_max[7:0]   <= rbuf_q;
+					2'd1: t64_max[15:8]  <= rbuf_q;
+					2'd2: t64_used[7:0]  <= rbuf_q;
+					2'd3: t64_used[15:8] <= rbuf_q;
+				endcase
+				t64_k <= t64_k + 4'd1;
+				if (t64_k == 4'd3) begin
+					t64_k <= 4'd0;
+					t64_i <= 8'd0;
+					t64_have1 <= 1'b0;
+					t64_have2 <= 1'b0;
+					state <= S_T64_ENT;
+				end
+			end
+		end
+	end
+
+	// 32-byte entries from $40: type, C64 file type, start, end, -, offset; only those in the first chunk
+	S_T64_ENT: begin
+		if (t64_k == 4'd0 && cnt == 4'd0 &&
+		    (({8'd0, t64_i} >= t64_n && t64_i != 8'd0) || t64_eaddr + 14'd32 > clen))
+			state <= S_T64_PICK;
+		else begin
+			cnt <= cnt + 4'd1;
+			if (cnt == 4'd0) rbuf_raddr <= t64_eaddr[12:0] + {9'd0, t64_k};
+			if (cnt == 4'd2) begin
+				cnt <= 4'd0;
+				case (t64_k)
+					4'd0:  e_type        <= rbuf_q;
+					4'd2:  e_start[7:0]  <= rbuf_q;
+					4'd3:  e_start[15:8] <= rbuf_q;
+					4'd4:  e_end[7:0]    <= rbuf_q;
+					4'd5:  e_end[15:8]   <= rbuf_q;
+					4'd8:  e_off[7:0]    <= rbuf_q;
+					4'd9:  e_off[15:8]   <= rbuf_q;
+					4'd10: e_off[23:16]  <= rbuf_q;
+					4'd11: e_off[31:24]  <= rbuf_q;
+					default: ;
+				endcase
+				t64_k <= t64_k + 4'd1;
+				if (t64_k == 4'd11) begin
+					t64_k <= 4'd0;
+					state <= S_T64_CMP;
+				end
+			end
+		end
+	end
+
+	S_T64_CMP: begin
+		if (e_type == 8'd1 && e_off != 32'd0 && e_off < fsize) begin
+			if (!t64_have1 || e_off < t64_off1) begin
+				if (t64_have1) begin t64_off2 <= t64_off1; t64_have2 <= 1'b1; end
+				t64_have1 <= 1'b1;
+				t64_off1  <= e_off;
+				t64_start <= e_start;
+				t64_end   <= e_end;
+			end else if (e_off > t64_off1 && (!t64_have2 || e_off < t64_off2)) begin
+				t64_off2  <= e_off;
+				t64_have2 <= 1'b1;
+			end
+		end
+		t64_i <= t64_i + 8'd1;
+		state <= S_T64_ENT;
+	end
+
+	// the end address is often wrong in T64s made by old tools: cap by the next data or the file end
+	S_T64_PICK: begin
+		if (!t64_have1) begin
+			pending[SLOT_PRG] <= 1'b0;              // no program in it: nothing to load
+			state <= S_IDLE;
+		end else begin
+			len = (t64_dlen == 16'd0 || t64_off1 + {16'd0, t64_dlen} > t64_limit) ? t64_limit - t64_off1
+			                                                                    : {16'd0, t64_dlen};
+			if (len > t64_room) len = t64_room;
+			t64     <= 1'b1;
+			dl_base <= t64_off1;
+			dl_len  <= len;
+			t64_hb  <= 1'b0;
+			state   <= S_DL_CHUNK;
+		end
+	end
+
+	// the PRG load address (2 bytes) before the T64's data, once the first chunk is in rbuf
+	S_DL_HDR: begin
+		cnt <= cnt + 4'd1;
+		if (cnt == 4'd0) begin
+			if (ioctl_wait) cnt <= 4'd0;
+			else begin
+				ioctl_data <= t64_hb ? t64_start[15:8] : t64_start[7:0];
+				ioctl_wr <= 1'b1;
+			end
+		end
+		if (cnt == 4'd4) begin
+			cnt <= 4'd0;
+			ioctl_addr <= ioctl_addr + 25'd1;
+			t64_hb <= 1'b1;
+			if (t64_hb) state <= S_DL_BYTE;
 		end
 	end
 

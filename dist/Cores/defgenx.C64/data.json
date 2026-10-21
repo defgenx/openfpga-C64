@@ -8,8 +8,8 @@
         "required": false,
         "parameters": 1,
         "deferload": true,
-        "extensions": ["prg"],
-        "size_maximum": 65538
+        "extensions": ["prg", "t64"],
+        "size_maximum": 2097152
       },
       {
         "name": "Cartridge",

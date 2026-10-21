@@ -13,7 +13,7 @@ Commodore 64 core (Sorgelig and contributors, built on Peter Wendrich's FPGA64),
 * Ready to run: the C64 and 1541 ROMs come with the core; no BIOS file needed
 * A **1541 disk drive** with `.d64` and `.g64` images, read **and write** (writes go back to the file on
   the card in the background); it becomes a 1581 for `.d81` images
-* `.prg` programs (loaded and started with RUN), `.crt` cartridges, `.tap` tapes
+* `.prg` and `.t64` programs (loaded and started with RUN), `.crt` cartridges, `.tap` tapes
 * Loadable System ROM: JiffyDOS, DolphinDOS, SpeedDOS (same files as on MiSTer)
 * REU up to 16 MB, second SID (stereo), C128 / smart turbo
 * 1351 mouse, user port 4-player adapter (Dock controllers 3 and 4)
@@ -57,16 +57,16 @@ Installer options:
 
 | File                | Slot        | What happens                                                         |
 |---------------------|-------------|----------------------------------------------------------------------|
-| `.prg`              | Program     | the C64 resets, the program is put in memory and `RUN` is typed      |
+| `.prg` `.t64`       | Program     | the C64 resets, the program is put in memory and `RUN` is typed      |
 | `.crt`              | Cartridge   | the C64 restarts with the cartridge; *Reset & Detach Cart* removes it |
 | `.d64` `.g64` `.d81`| Disk        | at the BASIC prompt: loaded and run (autostart); otherwise inserted in drive 8 |
 | `.tap`              | Tape        | at the BASIC prompt: loaded and run (Shift + Run/Stop typed for you)  |
 | `.rom` `.bin`       | System ROM  | replaces the C64 + 1541 ROMs (MiSTer's format: BASIC + KERNAL + 1541) |
 
-`.t64` files are not listed (the Pocket shows only the extensions above). A `.t64` wraps a program: with
-the card in your computer, double-click **`convert-t64.command`** (macOS) or **`convert-t64.bat`**
-(Windows). It finds the card and writes a `.prg` next to every `.t64` in `Assets/c64/common` and its
-subfolders; load those as a Program. Existing `.prg` files are kept, so run it again after adding games.
+A `.t64` loads its first program (the one stored first in the file), like a `.prg`. A few `.t64` hold
+several programs: with the card in your computer, double-click **`convert-t64.command`** (macOS) or
+**`convert-t64.bat`** (Windows). It finds the card and writes one `.prg` per program next to every `.t64`
+in `Assets/c64/common` and its subfolders. Existing `.prg` files are kept, so run it again after adding games.
 
 Autostart only types when the C64 is at the BASIC prompt, so a disk picked while a game asks for
 "side 2" is simply swapped in. Set *Autostart* to *Off* to always insert disks without typing. Disks and
@@ -134,7 +134,7 @@ Settings are saved on the card (`Settings/defgenx.C64/`) and come back at the ne
 | **A disk did not start by itself** | The C64 was not at the BASIC prompt (or *Autostart* is off): *Reset*, then pick the disk again, or type `LOAD"*",8,1` and `RUN`. |
 | **A game runs too fast / music too high** | It is an NTSC game on PAL or the reverse: change *Video*. |
 | **A game cannot save** | *Write Protect* is on (re-insert the disk after changing it). |
-| **A folder of games looks empty** | The files are not a type the core loads (`.t64`, `.zip`, …): double-click `convert-t64.command` / `.bat` for `.t64`, unzip archives. |
+| **A folder of games looks empty** | The files are not a type the core loads (`.zip`, `.d71`, …): unzip archives. |
 | **A protected disk does not load** | Try the `.g64` version of the disk; `.d64` cannot hold copy protection. |
 
 When reporting a problem, please say which version (`version` in `Cores/defgenx.C64/core.json`), the
@@ -164,8 +164,9 @@ make -C sim           # needs Icarus Verilog, Python 3 and nvc (VHDL)
   number of bits and with a damaged sector header.
 * `hid`: `hid_c64` key make/break events and mouse reports.
 * `media`: `c64_media` + `ddram_psram` against models of APF's target commands, the Pocket's PSRAM and
-  the C64 — PRG streaming with `ioctl_wait`, a D64 mounted as a G64 identical to MiSTer's, a 1541 track
-  written back into D64 sectors, a G64 copied and written back, D81 sectors read and written.
+  the C64 — PRG streaming with `ioctl_wait`, T64s streamed as the PRG `tools/t64_to_prg.py` extracts
+  (wrong end addresses, entries out of order, no program), a D64 mounted as a G64 identical to MiSTer's,
+  a 1541 track written back into D64 sectors, a G64 copied and written back, D81 sectors read and written.
 * `autostart`: `LOAD"*",8,1` / `RUN` typed for a disk at the prompt, Shift+Run/Stop for a tape, nothing
   for a disk swapped in during a game.
 * `osk`: renders the on-screen keyboard and the loading screen to `sim/video/*.png`.
@@ -173,12 +174,20 @@ make -C sim           # needs Icarus Verilog, Python 3 and nvc (VHDL)
   line and frame sizes for PAL/NTSC with and without borders, and the 320×200 window exactly on the
   display area.
 
+```sh
+make -C sim/system    # needs Verilator 5 and Docker (GHDL converts the VHDL); about 6 minutes once built
+```
+
+The whole core (`core_top` with the real APF command handler, `c64_top`, C64_MiSTer's SDRAM controller
+against an SDRAM model) boots to `READY.`, then loads a PRG, a T64, a CRT and a TAP picked at runtime and
+checks they run. What is converted or stubbed: [sim/system/README.md](sim/system/README.md).
+
 ## Known gaps
 
 * Not yet tested on a real Pocket: SDRAM timing and PSRAM in particular need confirming.
 * One drive (8) instead of MiSTer's two, and no OPL2 Sound Expander: with both, the core needs ~20% more
   logic than the Pocket's FPGA has. Two-disk games are played by swapping disks in drive 8.
-* No 1571 / `.d71`, no EasyFlash saving back to the `.crt`, no `.t64` (convert to `.d64`).
+* No 1571 / `.d71`, no EasyFlash saving back to the `.crt`. A `.t64` loads only its first program.
 * No user port RS-232, no paddles, no external IEC.
 * The RTC is set once at boot (used by GEOS with the CP-Clock F83 driver).
 
@@ -202,4 +211,5 @@ make -C sim           # needs Icarus Verilog, Python 3 and nvc (VHDL)
 * On-screen keyboard font: [font8x8](https://github.com/dhepper/font8x8) by Daniel Hepper — public domain.
 
 The Pocket-specific code in this repository is distributed under the GPL (v2 or later), like the core it
-builds on.
+builds on: see [LICENSE](LICENSE). The release zip carries it as `C64-LICENSE.txt`. Files taken from other
+projects keep their own licence (MIT for agg23's, public domain for the font), stated at the top of each file.

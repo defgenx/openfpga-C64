@@ -2,6 +2,7 @@
 //
 // run_media.py writes the slot files and checks what this bench dumps:
 //   prg      a PRG picked from the menu streams into ioctl (with ioctl_wait)
+//   t64/prg  cases 1-6 in the Program slot: T64 variants streamed as a PRG, a PRG that starts with "C64", an empty T64
 //   d64      a D64 mounts as a G64 in PSRAM, read back through the DDRAM port
 //   d64wb    a 1541 track flush is decoded back into the D64's sectors
 //   g64      a G64 is copied to PSRAM (drive 9) and a track flush is written back
@@ -16,6 +17,8 @@ module media_tb;
 	reg [8*256-1:0] dir;
 	integer sz[6];
 	integer sz_prg = 0, sz_d8 = 0, sz_d9 = 0;
+	integer csz[7], pa_val;
+	reg [8*8-1:0] pa_name;                 // Program slot cases 1..6
 	reg [7:0] slot0[65536];
 	reg [7:0] slot2[1048576];
 	reg [7:0] slot3[1048576];
@@ -86,6 +89,7 @@ module media_tb;
 		dataslot_update_id <= id;
 		dataslot_update_size <= size;
 		dataslot_update <= 1;
+		@(posedge clk_74a);          // core_bridge_cmd holds dataslot_update for 2 clk_74a cycles
 		@(posedge clk_74a);
 		dataslot_update <= 0;
 	endtask
@@ -166,16 +170,38 @@ module media_tb;
 	always @(posedge clk_sys) if (media.disk_inserted) n_inserted = n_inserted + 1;
 
 	/* ---------------- C64 model ---------------- */
+	// As c64_top: ioctl_wr raises ioctl_wait and ioctl_data is latched only when the wait ends
+	// (at an io_cycle). PRG bytes at ioctl_addr 0 and 1 are taken at once, without the wait.
 	integer fio;
 	integer wait_cnt = 0, nbytes = 0;
+	reg        smp_pend = 0;
+	reg [24:0] smp_addr;
+	reg  [7:0] smp_idx;
+
+	task automatic log_byte(input [7:0] idx, input [24:0] a, input [7:0] d);
+		$fwrite(fio, "%02x %06x %02x\n", idx, a, d);
+	endtask
+
 	always @(posedge clk_sys) begin
 		if (ioctl_wr) begin
-			$fwrite(fio, "%02x %06x %02x\n", ioctl_index, ioctl_addr, ioctl_data);
 			nbytes = nbytes + 1;
-			// the first PRG byte waits for the kernal (reset_wait), the rest for an io_cycle
-			wait_cnt = (nbytes == 1) ? 3000 : 8 + (nbytes * 13) % 40;
+			if (smp_pend) $display("FAIL ioctl_wr at addr %0h while the byte at %0h is still waiting", ioctl_addr, smp_addr);
+			if (ioctl_index == 8'h01 && ioctl_addr < 2) begin
+				log_byte(ioctl_index, ioctl_addr, ioctl_data);
+			end else begin
+				smp_pend = 1; smp_addr = ioctl_addr; smp_idx = ioctl_index;
+				wait_cnt = 5 + ($urandom % 36);
+			end
+			// the first PRG byte waits for the kernal (reset_wait)
+			if (nbytes == 1) wait_cnt = 3000;
 		end
-		if (wait_cnt > 0) wait_cnt = wait_cnt - 1;
+		if (wait_cnt > 0) begin
+			wait_cnt = wait_cnt - 1;
+			if (wait_cnt == 0 && smp_pend) begin
+				log_byte(smp_idx, smp_addr, ioctl_data);
+				smp_pend = 0;
+			end
+		end
 		ioctl_wait <= wait_cnt > 0;
 	end
 
@@ -228,9 +254,36 @@ module media_tb;
 		$fclose(f);
 	endtask
 
+	// pick the Program slot and wait for the download to start and end; expect = 0: no download at all
+	task automatic run_case(input integer k, input integer expect_dl);
+		integer to, started;
+		reg [8*256-1:0] fn;
+		$sformat(fn, "%0s/case%0d.hex", dir, k);
+		$readmemh(fn, slot0);
+		$sformat(fn, "%0s/ioctl_c%0d.txt", dir, k);
+		fio = $fopen(fn, "w");
+		nbytes = 0;
+		pick(0, csz[k]);
+		started = 0;
+		for (to = 0; to < (expect_dl ? 4000000 : 60000) && !started; to = to + 1) begin
+			@(posedge clk_sys);
+			if (ioctl_download) started = 1;
+		end
+		if (started) while (ioctl_download) @(posedge clk_sys);
+		if (started != expect_dl) $display("FAIL case %0d: download %0s", k, started ? "started" : "did not start");
+		repeat (200) @(posedge clk_sys);
+		$fclose(fio);
+		$display("case %0d: %0d bytes", k, nbytes);
+	endtask
+
 	initial begin
 		integer i;
 		void'($value$plusargs("dir=%s", dir));
+		for (i = 1; i <= 6; i = i + 1) begin
+			$sformat(pa_name, "t%0d=%%d", i);
+			if (!$value$plusargs(pa_name, pa_val)) pa_val = 0;
+			csz[i] = pa_val;
+		end
 		for (i = 0; i < 6; i = i + 1) sz[i] = 0;
 		void'($value$plusargs("prg=%d", sz_prg)); sz[0] = sz_prg;
 		void'($value$plusargs("d8=%d", sz_d8));   sz[2] = sz_d8;
@@ -253,6 +306,10 @@ module media_tb;
 		$fclose(fio);
 		$display("prg: %0d bytes", nbytes);
 		if (media.load_pct < 12'h095) $display("FAIL prg loading screen ended at %h%%", media.load_pct);
+
+		// ---- T64 and PRG look-alikes in the Program slot ----
+		for (i = 1; i <= 5; i = i + 1) run_case(i, 1);
+		run_case(6, 0);                   // a T64 without a program loads nothing
 
 		// ---- d64 on drive 8 ----
 		pick(2, sz[2]);

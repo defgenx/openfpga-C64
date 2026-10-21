@@ -26,7 +26,7 @@ the **root** of the card, merging with the folders already there:
 SD card root
 ├── Assets/
 │   └── c64/
-│       └── common/              <- your .prg .crt .d64 .g64 .d81 .tap files go here
+│       └── common/              <- your .prg .t64 .crt .d64 .g64 .d81 .tap files go here
 ├── Cores/
 │   └── defgenx.C64/
 │       ├── c64.rbf_r            <- the core bitstream
@@ -55,7 +55,7 @@ Copy files to `Assets/c64/common/`, then load them from *Core Settings*:
 
 | File                     | Slot          | Then                                                  |
 |--------------------------|---------------|-------------------------------------------------------|
-| `.prg`                   | Program       | it starts by itself                                   |
+| `.prg` / `.t64`          | Program       | it starts by itself                                   |
 | `.crt`                   | Cartridge     | it starts by itself                                   |
 | `.d64` / `.g64` / `.d81` | Disk          | it starts by itself (autostart)                       |
 | `.tap`                   | Tape          | it starts by itself (autostart)                       |
@@ -68,7 +68,9 @@ inserted, `LOAD"$",8` and `LIST` show its directory. Big files show a loading sc
 * Disks are **writable**: what a game saves is written back to the file on the card. Keep backups. Set
   *Write Protect* (before inserting the disk) to keep a disk unchanged.
 * `.d64` can't hold copy protection; when a game doesn't load from its `.d64`, look for a `.g64`.
-* `.t64` and `.d71` are not supported; convert `.t64` to `.d64` (for example with DirMaster).
+* A `.t64` loads its first program. For a `.t64` holding several, `convert-t64.command` / `.bat` (next to
+  the installer) writes one `.prg` per program.
+* `.d71` is not supported.
 
 ## 4. Start it
 
