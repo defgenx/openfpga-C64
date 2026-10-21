@@ -102,6 +102,15 @@ out = subprocess.run(["vvp", "-n", str(W / "media_tb.vvp"), f"+dir={W}", f"+prg=
                       f"+d9={len(g64)}"] + [f"+t{k}={len(d)}" for k, (_, d) in enumerate(cases, 1)], check=True, capture_output=True, text=True).stdout
 print("".join(l + "\n" for l in out.splitlines() if not l.startswith(("Instantiated", "  ", "INFO", "\t"))))
 
+# APF without 0x008F (Data slot access all complete): a picked PRG still loads
+WN = W / "noboot"
+WN.mkdir(exist_ok=True)
+hexfile(WN / "slot0.hex", prg)
+for f in ("slot2.hex", "slot3.hex"):
+    hexfile(WN / f, b"\0")
+out_nb = subprocess.run(["vvp", "-n", str(W / "media_tb.vvp"), f"+dir={WN}", f"+prg={len(prg)}", "+noboot=1"],
+                        check=True, capture_output=True, text=True).stdout
+
 fail = []
 def check(name, ok):
     print(f"{name:42} {'OK' if ok else 'FAIL'}")
@@ -109,6 +118,10 @@ def check(name, ok):
         fail.append(name)
 
 check("no FAIL from the bench", "FAIL" not in out)
+nb = [l.split() for l in (WN / "ioctl.txt").read_text().splitlines()]
+check("prg without 0x008F at boot",
+      "FAIL" not in out_nb and len(nb) == len(prg) and all(int(l[1], 16) == i and int(l[2], 16) == prg[i]
+                                                           for i, l in enumerate(nb)))
 lines = [l.split() for l in (W / "ioctl.txt").read_text().splitlines()]
 check("prg: index 01, every byte in order",
       len(lines) == len(prg) and all(l[0] == "01" and int(l[1], 16) == i and int(l[2], 16) == prg[i]

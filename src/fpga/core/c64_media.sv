@@ -494,7 +494,8 @@ always @(posedge clk_sys) begin
 	end
 
 	case (state)
-	S_BOOT: if (boot_s[2]) state <= S_IDLE;
+	// a file picked before APF's 0x008F (Data slot access all complete) is served without it
+	S_BOOT: if (boot_s[2] || |pending) state <= S_IDLE;
 
 	S_IDLE: begin
 		sd_ack <= 2'b00;

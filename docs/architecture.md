@@ -110,6 +110,37 @@ The G64 images of both drives live in PSRAM `cram0` (2 MB each). PSRAM is used i
 asynchronous mode; one 64-bit DDRAM word takes four accesses (~0.6 µs), so a whole track loads in about
 0.65 ms, well under the ~2 ms that timing-sensitive protections tolerate on a half-track step.
 
+### Timing against the datasheets
+
+The Pocket's parts ([Analogue: external hardware](https://www.analogue.co/developer/docs/external-hardware)):
+SDRAM AS4C32M16MSA-6BIN (1.8 V mobile SDRAM), PSRAM AS1C8M16PL-70BIN (CellularRAM). Alliance publishes no
+datasheet for the x16 SDRAM; its x32 sibling AS4C16M32MSA-6 (same 512 Mb family) gives the values below.
+
+**SDRAM.** clk64 (15.3–15.9 ns) is within CL2's 12 ns minimum period. The chip wants 2.0 ns setup and
+1.0 ns hold on commands, address and write data, and gives read data tAC(CL2) ≤ 6 ns, tOH ≥ 2.5 ns.
+`core_constraints.sdc` uses 1.5 / 0.8 ns and a 3.2 ns minimum input delay, and its `-hold 1` on the read
+multicycle checks hold one clk64 period before the edge `sdram.v` samples on. Re-analysed with the datasheet
+values and the hold check at the sampling edge, the outputs keep ≥ 4.7 ns setup and ≥ 6.6 ns hold, read
+setup ≥ 11 ns, and **read hold is −0.74 ns (slow corner) and −3.18 ns (fast corner)**: the valid window of a
+read ends just before the sampling edge. It works because reads are single words (burst length 1) — after
+tOH the chip stops driving and the bus keeps the last value until something else drives it, which is
+several clocks later. Moving that edge needs a phase-shifted SDRAM clock from the PLL instead of the
+inverted clk64, and hardware to check it on. `sdram.v` also skips two steps of the datasheet's power-up
+sequence (two AUTO REFRESH before the mode register, and the extended mode register write); the chip's
+power-up defaults (full drive strength, full-array self refresh) are what the core needs.
+
+**PSRAM.** `psram.sv`'s limits are the datasheet's (tVP 5, tAVS 5, tAVH 2, tCVS 7, tWP 45, tDW 20, tAW 70,
+tAA 70 ns), computed for 33 MHz so the real clk_sys only adds margin; CE# is low for one access (tCEM is
+4 µs) and the word address 3FFFFFh that opens the configuration registers is never reached. A read samples
+one clk_sys cycle after OE# goes low: the datasheet gives 20 ns for OE# to valid data, so with the FPGA's
+pad delays a few ns of the 30.6 ns NTSC cycle remain. These paths are false paths in the SDC, so the
+analyser does not check them.
+
+**PLL.** The VCO (`pll_vco_div` 2) runs at 1135.0 MHz for PAL and 1178.2 MHz for NTSC, inside Cyclone V's
+600–1600 MHz; the fractional part is 0.643 / 0.934 (Altera's range 0.05–0.95). clk_sys is 31.52795 MHz
+(0.985248 MHz × 32) and 32.72727 MHz (1.0227273 MHz × 32); clk_sys_90 is 4.5 VCO-counter cycles late, 90° in
+both standards. The reconfiguration writes mode, K and start, as c64.sv does.
+
 ## Clocks
 
 `pll_c64` is MiSTer's reconfigurable fractional PLL re-targeted to the 74.25 MHz reference: VCO =

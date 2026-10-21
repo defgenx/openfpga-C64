@@ -16,7 +16,8 @@ set_input_delay  -clock dram_clk_pin -min 3.2 [get_ports {dram_dq[*]}]
 set_output_delay -clock dram_clk_pin -max 1.5 [get_ports {dram_dq[*] dram_a[*] dram_ba[*] dram_dqm[*] dram_ras_n dram_cas_n dram_we_n}]
 set_output_delay -clock dram_clk_pin -min -0.8 [get_ports {dram_dq[*] dram_a[*] dram_ba[*] dram_dqm[*] dram_ras_n dram_cas_n dram_we_n}]
 # sdram.v samples read data three clk64 cycles after the READ command, one cycle
-# after the edge the analyser picks by default
+# after the edge the analyser picks by default. -hold 1 checks hold a period early, which hides
+# a negative read hold margin: docs/architecture.md, "Timing against the datasheets".
 set_multicycle_path -from [get_clocks dram_clk_pin] -to [get_clocks "$PLL_OUT\[1\].*|divclk"] -setup 2
 set_multicycle_path -from [get_clocks dram_clk_pin] -to [get_clocks "$PLL_OUT\[1\].*|divclk"] -hold 1
 

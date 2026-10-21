@@ -40,6 +40,7 @@ module media_tb;
 	reg  [15:0] dataslot_update_id = 0;
 	reg  [31:0] dataslot_update_size = 0;
 	reg         dataslot_allcomplete = 0;
+	integer     noboot;
 	wire  [9:0] datatable_addr;
 	reg  [31:0] dt_q1, datatable_q;
 	always @(posedge clk_74a) begin dt_q1 <= 32'd0; datatable_q <= dt_q1; end   // empty table
@@ -294,9 +295,13 @@ module media_tb;
 		fio = $fopen({dir, "/ioctl.txt"}, "w");
 		sd_lba[0] = 0; sd_lba[1] = 0;
 
+		// +noboot=1: APF never sends 0x008F; a PRG picked with 0x008A must still load
+		if (!$value$plusargs("noboot=%d", noboot)) noboot = 0;
 		repeat (50) @(posedge clk_74a);
-		dataslot_allcomplete <= 1;
-		repeat (400) @(posedge clk_74a);   // datatable scan (empty)
+		if (!noboot) begin
+			dataslot_allcomplete <= 1;
+			repeat (400) @(posedge clk_74a);   // datatable scan (empty)
+		end
 
 		// ---- prg ----
 		pick(0, sz[0]);
@@ -306,6 +311,7 @@ module media_tb;
 		$fclose(fio);
 		$display("prg: %0d bytes", nbytes);
 		if (media.load_pct < 12'h095) $display("FAIL prg loading screen ended at %h%%", media.load_pct);
+		if (noboot) $finish;
 
 		// ---- T64 and PRG look-alikes in the Program slot ----
 		for (i = 1; i <= 5; i = i + 1) run_case(i, 1);
@@ -350,7 +356,8 @@ module media_tb;
 	end
 
 	initial begin
-		#2_000_000_000;
+		if ($test$plusargs("noboot")) #100_000_000;   // the PRG alone takes a few ms
+		else #2_000_000_000;
 		$display("FAIL timeout");
 		$finish;
 	end
