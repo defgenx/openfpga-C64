@@ -27,6 +27,7 @@ wire        dram_clk, dram_cke, dram_ras_n, dram_cas_n, dram_we_n;
 
 wire [21:16] cram0_a;
 tri  [15:0]  cram0_dq;
+wire         cram0_wait_w;
 wire         cram0_clk, cram0_adv_n, cram0_cre, cram0_ce0_n, cram0_ce1_n, cram0_oe_n, cram0_we_n, cram0_ub_n, cram0_lb_n;
 wire [21:16] cram1_a;
 tri  [15:0]  cram1_dq;
@@ -67,7 +68,7 @@ core_top dut (
 	.port_tran_so(port_tran_so), .port_tran_so_dir(port_tran_so_dir),
 	.port_tran_sck(port_tran_sck), .port_tran_sck_dir(port_tran_sck_dir),
 	.port_tran_sd(port_tran_sd), .port_tran_sd_dir(port_tran_sd_dir),
-	.cram0_a(cram0_a), .cram0_dq(cram0_dq), .cram0_wait(1'b0), .cram0_clk(cram0_clk),
+	.cram0_a(cram0_a), .cram0_dq(cram0_dq), .cram0_wait(cram0_wait_w), .cram0_clk(cram0_clk),
 	.cram0_adv_n(cram0_adv_n), .cram0_cre(cram0_cre), .cram0_ce0_n(cram0_ce0_n), .cram0_ce1_n(cram0_ce1_n),
 	.cram0_oe_n(cram0_oe_n), .cram0_we_n(cram0_we_n), .cram0_ub_n(cram0_ub_n), .cram0_lb_n(cram0_lb_n),
 	.cram1_a(cram1_a), .cram1_dq(cram1_dq), .cram1_wait(1'b0), .cram1_clk(cram1_clk),
@@ -96,6 +97,11 @@ core_top dut (
 sdram_model sdr (
 	.clk(dram_clk), .cke(dram_cke), .cs_n(1'b0), .ras_n(dram_ras_n), .cas_n(dram_cas_n),
 	.we_n(dram_we_n), .ba(dram_ba), .a(dram_a), .dqm(dram_dqm), .dq(dram_dq)
+);
+
+psram_model psr (
+	.a(cram0_a), .dq(cram0_dq), .clk(cram0_clk), .adv_n(cram0_adv_n), .cre(cram0_cre), .ce0_n(cram0_ce0_n),
+	.ce1_n(cram0_ce1_n), .oe_n(cram0_oe_n), .we_n(cram0_we_n), .ub_n(cram0_ub_n), .lb_n(cram0_lb_n), .wait_o(cram0_wait_w)
 );
 
 // ---------------------------------------------------------------- APF bridge model
@@ -135,7 +141,9 @@ task automatic apf_host(input [15:0] cmd, input [31:0] p0, input [31:0] p1);
 endtask
 
 // ---------------------------------------------------------------- files behind the data slots
-reg [7:0] slot_data [0:5][0:65535];
+reg [7:0] slot_data [0:5][0:1048575];
+reg [7:0] filebuf [0:1048575];
+integer   wr_cmds = 0, wr_bytes = 0;
 integer   slot_len  [0:5];
 integer   target_cmds = 0, target_bytes = 0;
 integer   last_req_slot = -1, last_req_off = 0, last_req_len = 0;
@@ -183,6 +191,24 @@ task automatic apf_poll_once;
 					repeat (GAP) @(negedge clk_74a);
 				end
 				target_bytes = target_bytes + len;
+				apf_wr(32'hF8001000, 32'h6F6B0000);
+			end
+			16'h0184: begin
+				apf_rd(32'hF8001020, id);
+				apf_rd(32'hF8001024, off);
+				apf_rd(32'hF8001028, baddr);
+				apf_rd(32'hF800102C, len);
+				wr_cmds = wr_cmds + 1;
+				if (!quiet) $display("[%0t] APF: target WRITE slot %0d offset %0d bridge %h length %0d", $time, id, off, baddr, len);
+				apf_wr(32'hF8001000, 32'h62750000);
+				nw = (len + 3) / 4;
+				for (i = 0; i < nw; i = i + 1) begin
+					apf_rd(baddr + 4 * i, w);
+					for (b = 0; b < 4; b = b + 1)
+						if (i * 4 + b < len) slot_data[id][off + i * 4 + b] = w[31 - 8 * b -: 8];
+				end
+				if (off + len > slot_len[id]) slot_len[id] = off + len;
+				wr_bytes = wr_bytes + len;
 				apf_wr(32'hF8001000, 32'h6F6B0000);
 			end
 			default: begin
@@ -268,7 +294,9 @@ always @(posedge dut.clk_sys) begin
 	st_d <= dut.media.state;
 	pend_d <= dut.media.pending;
 	if (dut.media.pending != pend_d) $display("[%0t] media.pending %b -> %b", $time, pend_d, dut.media.pending);
-	if (dut.media.state != st_d && !quiet)
+	if (dut.media.state != st_d && !quiet && (dut.media.state == 1 || dut.media.state == 4 || dut.media.state == 8 || dut.media.state == 9 ||
+	    dut.media.state == 11 || dut.media.state == 21 || dut.media.state == 22 || dut.media.state == 25 || dut.media.state == 26 ||
+	    dut.media.state == 28 || dut.media.state == 30))
 		$display("[%0t] media.state %0d -> %0d (slot %0d)", $time, st_d, dut.media.state, dut.media.slot);
 end
 
@@ -311,6 +339,34 @@ function screen_has_ready;
 	end
 endfunction
 
+task automatic dump_screen;
+	integer r, c;
+	reg [7:0] b;
+	reg [8*40-1:0] line;
+	begin
+		for (r = 0; r < 25; r = r + 1) begin
+			for (c = 0; c < 40; c = c + 1) begin
+				b = pk(25'h400 + r * 40 + c);
+				b = b & 8'h7F;
+				if (b >= 1 && b <= 26) b = b + 8'h40;
+				else if (b == 0) b = 8'h40;
+				else if (b < 8'h20 || b > 8'h5F) b = 8'h2E;
+				line[8*(39-c) +: 8] = b;
+			end
+			$display("   |%0s|", line);
+		end
+	end
+endtask
+
+integer sd_rd_cnt = 0, sd_wr_cnt = 0;
+always @(posedge dut.clk_sys) begin
+	if (|dut.sd_rd) sd_rd_cnt <= sd_rd_cnt + 1;
+	if (|dut.sd_wr) sd_wr_cnt <= sd_wr_cnt + 1;
+end
+reg show_screen = 0;
+integer hb = 0;
+always #1_000_000_000_000 if (show_screen) begin $display("[%0t] screen, sd_rd cycles %0d sd_wr cycles %0d:", $time, sd_rd_cnt, sd_wr_cnt); dump_screen; end
+
 task automatic dump_state(input [8*40-1:0] tag);
 	begin
 		$display("--- state dump (%0s) at %0t ---", tag, $time);
@@ -325,6 +381,7 @@ task automatic dump_state(input [8*40-1:0] tag);
 			dut.c64.reset_n, dut.c64.erasing, dut.c64.inj_meminit, dut.c64.c64_addr, dut.c64.cart_attached);
 		$display("  icb tstate=%0d target_0=%h ack=%b done=%b  hstate=%0d", dut.icb.tstate, dut.icb.target_0,
 			dut.icb.target_dataslot_ack, dut.icb.target_dataslot_done, dut.icb.hstate);
+		dump_screen;
 		$display("  SDRAM model: errors=%0d active=%0d read=%0d write=%0d refresh=%0d", sdr.err, sdr.n_active, sdr.n_read, sdr.n_write, sdr.n_refresh);
 	end
 endtask
@@ -615,7 +672,172 @@ task automatic test_tap;
 endtask
 
 always #100_000_000 $fflush;   // every 100 us of sim time
-always #50_000_000_000 $display("[%0t] heartbeat: c64_addr=%h reset_n=%b media.state=%0d", $time, dut.c64.c64_addr, dut.c64.reset_n, dut.media.state);
+always #50_000_000_000 $display("[%0t] heartbeat: c64_addr=%h reset_n=%b media.state=%0d autostart.state=%0d key=%h at_prompt=%b disk_ready=%b drive_led=%b", $time, dut.c64.c64_addr, dut.c64.reset_n, dut.media.state, dut.autostart.state, dut.autostart.key, dut.c64_at_prompt, dut.c64_disk_ready, dut.c64.drive_led[0]);
+
+
+// ---------------------------------------------------------------- disk and NTSC tests
+`include "disk.vh"
+integer mount_cnt = 0, sys_cnt = 0;
+realtime t_mount, t_wr_last;
+integer  wr_bytes_d = 0;
+always @(posedge dut.clk_sys) begin
+	sys_cnt <= sys_cnt + 1;
+	if (dut.img_mounted[0]) begin mount_cnt <= mount_cnt + 1; t_mount = $realtime; end
+end
+always @(posedge dut.clk_74a) if (wr_bytes != wr_bytes_d) begin wr_bytes_d <= wr_bytes; t_wr_last = $realtime; end
+
+task automatic load_hex(input integer slot, input string fname, input integer size);
+	integer k;
+	begin
+		$readmemh(fname, filebuf);
+		for (k = 0; k < size; k = k + 1) slot_data[slot][k] = filebuf[k];
+		slot_len[slot] = size;
+	end
+endtask
+
+// image in PSRAM (drive 8 at byte 0) against a reference file
+task automatic check_psram_image(input string fname, input integer size, input [8*72-1:0] tag);
+	integer k, bad2;
+	begin
+		$readmemh(fname, filebuf);
+		bad2 = 0;
+		for (k = 0; k < size; k = k + 1)
+			if (psr.peek8(k) !== filebuf[k]) begin
+				if (bad2 < 8) $display("    PSRAM mismatch at %0d: have %h expected %h", k, psr.peek8(k), filebuf[k]);
+				bad2 = bad2 + 1;
+			end
+		check(bad2 == 0, tag);
+	end
+endtask
+
+// kind: 0 D64 picked at the prompt, 1 G64, 2 D64 + write-back, 3 D64 found by the boot datatable scan, 4 D81
+task automatic test_disk(input integer kind);
+	integer k, size, m0, found, w0, lastsec;
+	realtime tpick, tsig, tdone;
+	string f, ref_f;
+	reg [7:0] pat [0:15];
+	reg [7:0] orig [0:174847];
+	begin
+		for (k = 0; k < 16; k = k + 1) pat[k] = k[7:0] ^ 8'h5A;
+		case (kind)
+		0, 3: begin f = "work/disk/run.d64.hex"; size = `D64_SIZE; ref_f = "work/disk/run.g64_ref.hex"; end
+		1:    begin f = "work/disk/run.g64.hex"; size = `G64_SIZE; ref_f = "work/disk/run.g64_ref.hex"; end
+		2:    begin f = "work/disk/wb.d64.hex";  size = `D64_SIZE; ref_f = "work/disk/wb.g64_ref.hex"; end
+		default: begin f = "work/disk/run.d81.hex"; size = `D81_SIZE; ref_f = ""; end
+		endcase
+		$display("== TEST: disk kind %0d (%0s, %0d bytes) ==", kind, f, size);
+		sig_a = 8'hAA; sig_b = 8'h55;
+		m0 = mount_cnt;
+		tpick = $realtime;
+		if (kind == 3) begin
+			$display("   image present in the datatable at boot (persisted disk)");
+		end else begin
+			test_boot;
+			load_hex(2, f, size);
+			tpick = $realtime;
+			apf_set_slot(2, size);
+			$display("[%0t] disk picked (slot 2, size %0d)", $time, size);
+		end
+		if (kind == 3) tpick = 0.0;
+		// mount: the file is read and converted / copied into PSRAM, then img_mounted pulses
+		for (k = 0; k < 20000 && !(mount_cnt > m0); k = k + 1) apf_run_us(1000);
+		$display("   img_mounted after %0.1f ms (size %0d type %b)", (t_mount - tpick) / 1e9, dut.img_size, dut.img_type);
+		check(mount_cnt > m0, "img_mounted pulsed");
+		check(dut.img_size == size, "img_size is the file size");
+		if (kind != 4) check_psram_image(ref_f, (kind == 1) ? size : `G64_SIZE, "G64 image in PSRAM equals sim/gcr_ref.py synth_g64 / the file");
+		if (kind == 4) check(dut.img_type == 2'b11, "img_type = 1581");
+		// autostart: LOAD"*",8,1 then RUN, the first PRG loads over IEC and runs
+		if (kind == 2) begin
+			for (k = 0; k < 600 && !(pk(25'hC002) == 8'h77); k = k + 1) apf_run_us(100000);
+			tsig = $realtime;
+			$display("   program finished its SAVE %0.2f s after the mount (C000=%h C001=%h C002=%h C003=%h)", (tsig - t_mount) / 1e12, pk(25'hC000), pk(25'hC001), pk(25'hC002), pk(25'hC003));
+			check(pk(25'hC000) == 8'hAA && pk(25'hC001) == 8'h55, "disk program loaded and ran (signature)");
+			check(pk(25'hC002) == 8'h77, "SAVE returned");
+			check(pk(25'hC003) == 8'h00, "SAVE reported no error (carry clear)");
+			// the flush happens ~0.5 s after the drive stops writing
+			for (k = 0; k < 400 && !(wr_cmds > 0 && ($realtime - t_wr_last) > 1.5e12); k = k + 1) apf_run_us(100000);
+			$display("   write-back: %0d Dataslot Write commands, %0d bytes, last at %0.2f s after the SAVE returned", wr_cmds, wr_bytes, (t_wr_last - tsig) / 1e12);
+			check(wr_cmds > 0, "c64_media wrote back to the D64 file");
+			// compare with the original image
+			$readmemh("work/disk/wb.d64.hex", filebuf);
+			found = 0; w0 = 0; lastsec = -1;
+			for (k = 0; k < `D64_SIZE; k = k + 1) if (slot_data[2][k] !== filebuf[k]) begin
+				if (k / 256 != lastsec) begin
+					if (found < 12) $display("    D64 sector changed: file offset %0d (sector index %0d)", k, k / 256);
+					found = found + 1;
+					lastsec = k / 256;
+				end
+				w0 = w0 + 1;
+			end
+			$display("   %0d bytes differ from the original D64 in %0d sector(s)", w0, found);
+			// search the saved data (16 bytes, byte i = i ^ $5A)
+			found = 0;
+			for (k = 0; k < `D64_SIZE - 16; k = k + 1) begin
+				if (slot_data[2][k] == pat[0] && slot_data[2][k+1] == pat[1] && slot_data[2][k+7] == pat[7] && slot_data[2][k+15] == pat[15]) begin
+					found = found + 1;
+					$display("    saved data found at D64 offset %0d (track/sector index %0d, offset in sector %0d)", k, k / 256, k % 256);
+				end
+			end
+			check(found == 1, "the 16 saved bytes are in the D64 file");
+			// directory: 2nd entry "OUT"
+			found = 0;
+			for (k = 0; k < 8; k = k + 1)
+				if (slot_data[2][(357+1)*256 + 32*k + 5] == "O" && slot_data[2][(357+1)*256 + 32*k + 6] == "U" && slot_data[2][(357+1)*256 + 32*k + 7] == "T")
+					found = found + 1;
+			check(found == 1, "directory has the file OUT");
+			check(slot_data[2][(357+1)*256 + 32 + 2] == 8'h82 || slot_data[2][(357+1)*256 + 2] == 8'h82, "directory entry is a closed PRG");
+		end else begin
+			for (k = 0; k < 1200 && !(pk(25'hC000) == 8'hAA && pk(25'hC001) == 8'h55); k = k + 1) apf_run_us(100000);
+			tsig = $realtime;
+			$display("   signature seen %0.2f s after the mount, %0.2f s after the pick", (tsig - t_mount) / 1e12, (tsig - tpick) / 1e12);
+			check(pk(25'hC000) == 8'hAA && pk(25'hC001) == 8'h55, "first PRG on the disk loaded over IEC and ran (signature)");
+		end
+		if (!(pk(25'hC000) == 8'hAA && pk(25'hC001) == 8'h55)) dump_state("disk test failed");
+		check(sdr.err == 0, "no SDRAM protocol errors");
+		check(psr.err == 0, "no PSRAM protocol errors");
+	end
+endtask
+
+task automatic measure_clk(output real mhz);
+	integer n0;
+	realtime t0_;
+	begin
+		n0 = sys_cnt; t0_ = $realtime;
+		apf_run_us(200);
+		mhz = (sys_cnt - n0) / (($realtime - t0_) / 1e6);
+	end
+endtask
+
+task automatic test_ntsc;
+	integer k;
+	real f0, f1;
+	realtime tsw, trs;
+	begin
+		$display("== TEST: NTSC ==");
+		measure_clk(f0);
+		$display("   clk_sys before: %0.3f MHz", f0);
+		check(f0 > 31.4 && f0 < 31.7, "PAL clk_sys is 31.53 MHz");
+		tsw = $realtime;
+		apf_wr(32'h8000000C, 1);                 // interact.json Video = NTSC
+		for (k = 0; k < 600 && !(dut.pll.reconfigs > 0 && dut.pll_locked); k = k + 1) apf_run_us(1000);
+		$display("   PLL reconfigured %0.1f ms after the register write", ($realtime - tsw) / 1e9);
+		check(dut.pll.reconfigs > 0, "PLL reconfiguration sequence ran");
+		check(dut.ntsc_r == 1'b1, "core_top ntsc_r follows the Video register");
+		measure_clk(f1);
+		$display("   clk_sys after: %0.3f MHz", f1);
+		check(f1 > 32.6 && f1 < 32.85, "NTSC clk_sys is 32.73 MHz");
+		check(dut.c64.ntsc == 1'b1, "c64_top runs NTSC");
+		check(reset_n_falls >= 2, "the C64 was reset when the standard changed");
+		trs = $realtime;
+		for (k = 0; k < 4000 && !screen_has_ready(0); k = k + 1) apf_run_us(1000);
+		$display("   READY. on screen %0.1f ms after the PLL change", ($realtime - trs) / 1e9);
+		check(screen_has_ready(0), "READY. found in screen RAM in NTSC");
+		apf_run_us(60000);
+		check(rdy_hits > 1000, "CPU executes the kernal editor loop");
+		test_prg(3, 8'hAA, 8'h55, "NTSC size%4==3");
+		check(sdr.err == 0, "no SDRAM protocol errors");
+	end
+endtask
 
 // ---------------------------------------------------------------- main
 string testsel;
@@ -627,6 +849,7 @@ initial begin
 	if (!$value$plusargs("test=%s", testsel)) testsel = "all";
 	if (!$value$plusargs("order=%d", order)) order = 0;
 	if (!$value$plusargs("gap=%d", GAP)) GAP = 2;
+	begin integer scr; if ($value$plusargs("screen=%d", scr)) show_screen = scr != 0; end
 	if ($value$plusargs("dump_from=%d", dump_from) && $value$plusargs("dump_to=%d", dump_to)) begin
 		#(dump_from * 1000000);
 		$dumpfile("work/system.fst");
@@ -646,6 +869,7 @@ initial begin
 	// global watchdog (simulated time)
 	fork begin #(64'd60_000_000_000_000); $display("WATCHDOG: simulation limit reached"); dump_state("watchdog"); $finish; end join_none
 
+	if (testsel == "dboot") load_hex(2, "work/disk/run.d64.hex", `D64_SIZE);
 	$display("== APF boot (order %0d) ==", order);
 	repeat (20) @(negedge clk_74a);
 	// the core announces itself (PLL locked) with the ready-to-run target command; the host side
@@ -658,7 +882,7 @@ initial begin
 	// datatable: one {id}/{size} pair per slot, no files chosen yet
 	for (i_ = 0; i_ < 6; i_ = i_ + 1) begin
 		apf_wr(32'hF8002000 + 8 * i_, i_);          repeat (GAP) @(negedge clk_74a);
-		apf_wr(32'hF8002000 + 8 * i_ + 4, 0);       repeat (GAP) @(negedge clk_74a);
+		apf_wr(32'hF8002000 + 8 * i_ + 4, (i_ == 2 && testsel == "dboot") ? `D64_SIZE : 0);       repeat (GAP) @(negedge clk_74a);
 	end
 	apf_host(16'h008F, 0, 0);               // data slot update complete
 	if (order == 1) begin
@@ -667,6 +891,12 @@ initial begin
 	end
 	$display("[%0t] APF boot sequence done (reset_n=%b)", $time, dut.reset_n);
 
+	if (testsel == "ntsc") test_ntsc;
+	if (testsel == "disk") test_disk(0);
+	if (testsel == "g64") test_disk(1);
+	if (testsel == "wb") test_disk(2);
+	if (testsel == "dboot") test_disk(3);
+	if (testsel == "d81") test_disk(4);
 	if (testsel == "all" || testsel == "boot" || testsel == "prg" || testsel == "t64" || testsel == "crt" || testsel == "tap")
 		test_boot;
 	if (fails == 0 && (testsel == "all" || testsel == "prg")) begin
@@ -677,7 +907,7 @@ initial begin
 	if (fails == 0 && (testsel == "all" || testsel == "crt")) test_crt;
 	if (fails == 0 && (testsel == "all" || testsel == "tap")) test_tap;
 
-	$display("\n== SUMMARY: %0d checks passed, %0d failed; SDRAM model: %0d protocol errors ==", passes, fails, sdr.err);
+	$display("\n== SUMMARY: %0d checks passed, %0d failed; SDRAM model: %0d protocol errors, PSRAM model: %0d ==", passes, fails, sdr.err, psr.err);
 	$finish;
 end
 

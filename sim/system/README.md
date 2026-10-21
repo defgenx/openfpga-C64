@@ -20,12 +20,12 @@ Needs verilator >= 5.052, python3, docker with `hdlc/ghdl:yosys`.
 | sdram.v, cartridge.v, reu.v, mos6526.v, c1351, c1530, tape_subsystem/tap_scanner/tap_time_map/tape_counter, rtcF83, SID | real RTL (SID: copies in `work/sid` with `function(wire ..)` turned into `input`, which Verilator cannot parse) |
 | fpga64_sid_iec (6510/T65, VIC-II, buslogic, keyboard, rgbcolor), video_sync | VHDL converted with `ghdl synth --out=verilog` (`gen_vhdl.py`, `ghdl_conv.sh`, `post_ghdl.py`). Patches on the copy only: `work.T65` instantiation, static port actual, `when others` on a few case statements, ports renamed to the lower case c64_top.sv uses |
 | kernal / chargen ROMs (`dprom`) | `dprom` replaced by generated Verilog ROMs (`work/dprom_*.v`) loaded with `$readmemh` from the `.mif` files converted by `gen_vhdl.py` |
-| pll_c64 / pll_cfg | stub: clk_sys 31.526 MHz (31720 ps), clk64 exactly 2x with coinciding rising edges, locked at 20 us, reconfiguration ignored (PAL only) |
+| pll_c64 / pll_cfg | stub: PAL 31.526 MHz clk_sys (31720 ps), clk64 exactly 2x with coinciding rising edges, locked at 20 us. The reconfiguration is modelled: pll_cfg keeps K (register 7) and 'start' (register 2); the PLL drops `locked` for 60 us and then runs at 74.25 MHz x (7 + K/2^32) / 9 for clk64 (NTSC: 32.727 MHz clk_sys) |
 | mf_datatable, altddio_out, scfifo | behavioural models (`stubs.sv`) |
 | SDRAM chip | `sdram_model.sv`: 4 banks x 8192 x 1024 x 16, CL / BL from the mode register, DQM, auto-precharge; counts protocol errors (tRCD, closed bank, open-bank ACTIVE, mode register not set); `peek8` backdoor uses the controller's address map |
-| iec_drive | **stubbed idle** (IEC released, `disk_ready` = 1 as c1541_multi reports with the drive in reset). The drive is not part of these tests |
+| iec_drive (1541 + 1581, Dolphin ROM, parallel port) | real RTL from `rtl/iec_drive` (`gen_drive.py`: ROM `.mif` -> `$readmemh`); its VHDL (`T65`, `iecdrv_via6522`) converted with GHDL like the C64 (`t65_drv_conv.v`, `via_drv.v`; `BCD_en` tied to its VHDL default 1) |
 | sound_i2s | stubbed (no audio) |
-| PSRAM (cram0) | real `ddram_psram`/`psram`, but no chip model: pins float, nothing is read or written without a disk |
+| PSRAM (cram0) | real `ddram_psram`/`psram` on `psram_model.sv`: 8 MB async CellularRAM, multiplexed address, checks t_vp/t_avs/t_avh/t_cvs/t_wp/t_dw/t_aw and the 70/20 ns read access times (data is garbage before it is valid), `err` counter, peek8/poke8 backdoors |
 | APF | `tb_system.sv`: bridge read/write, host commands (poll for 0x4F4B), datatable, target-command servicing (see below) |
 
 ## APF model: what was assumed
@@ -44,3 +44,22 @@ Needs verilator >= 5.052, python3, docker with `hdlc/ghdl:yosys`.
 `tb_system.sv` testbench and APF model, `sdram_model.sv`, `stubs.sv`, `gen_vhdl.py` / `ghdl_conv.sh` /
 `ghdl_docker.sh` / `post_ghdl.py` (VHDL conversion), `gen_sid.py`.
 Everything generated is under `work/` (git-ignored).
+
+## Tests
+
+| target | what | sim time / wall time (several runs in parallel on a busy machine) |
+|--------|------|------|
+| `make` (boot, prg x2, t64, crt, tap) | default suite on one boot, with the real 1541/1581 present | 4 s / 8.5 min, 30 checks |
+| ntsc | Video register = NTSC: PLL reconfig (K written, `locked` drops), C64 reset, 32.73 MHz, READY, PRG | 2 s / 4 min, 15 checks |
+| disk | D64 picked (0x008A) at the prompt, G64 built by c64_media in PSRAM == `sim/gcr_ref.py`, autostart LOAD"*",8,1 + RUN, signature | 5 s / 16 min, 9 checks; signature 4.2 s after the mount |
+| g64 | the same program as a G64: copied byte for byte into PSRAM | 5 s / 16 min, 9 checks |
+| dboot | disk already in the datatable at boot (persisted disk, boot scan) | 4.4 s / 15 min, 6 checks |
+| wb | program SAVEs "OUT" over IEC; the D64 held by the APF model must hold file, directory entry and BAM | 9 s / 25 min, 15 checks; flush 0.23 s after SAVE returns |
+| d81 | the same disk as D81 (1581) | 5 s / 13 min, 9 checks |
+
+`gen_disk.py` writes the images and programs (`work/disk/*.hex`, `disk.vh`). The APF model also serves
+Dataslot Write (0x0184): it reads the core's write buffer over the bridge and updates the slot's file.
+
+`+screen=1` prints the C64 screen text once per simulated second (useful while a LOAD runs).
+c1581_drv.sv is copied with T65's open `rdy/abort_n/nmi_n/so_n` tied to 1: they rely on VHDL port defaults
+that Verilator does not apply (without it the 1581 CPU is halted and LOAD hangs at SEARCHING FOR *).

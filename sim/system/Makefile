@@ -1,6 +1,8 @@
 # Full-system simulation of the Pocket core (core_top) in Verilator.
 #   make            build and run all tests
 #   make prg|t64|crt|tap|boot   one test (each starts from power-on)
+#   make disk|g64|wb|dboot|d81|ntsc   disk and NTSC tests (slow: minutes to an hour of wall time)
+#   make full       the default suite and every disk / NTSC test, one simulation each
 #   make TRACE=1 ...        build with FST tracing (use +dump=<from_us>,<to_us> via ARGS)
 # Needs: verilator >= 5, python3, docker (hdlc/ghdl:yosys, only to convert the VHDL).
 SRC  = ../../src/fpga
@@ -21,23 +23,26 @@ VERILOG = \
   $(C64)/rtcF83.sv $(C64)/drv_overlay.sv $(C64)/am29f040.sv \
   $(W)/sid/sid_top.sv $(W)/sid/sid_voice.sv $(W)/sid/sid_tables.sv $(W)/sid/sid_filter.sv \
   $(W)/sid/sid_envelope.sv $(W)/sid/sid_dac.sv \
-  $(W)/fpga64_conv.v $(W)/video_sync.v $(wildcard $(W)/dprom_*.v) \
-  stubs.sv sdram_model.sv tb_system.sv
+  $(W)/fpga64_conv.v $(W)/video_sync.v $(W)/t65_drv_conv.v $(W)/via_drv.v $(addprefix $(W)/dprom_,chargen.v chargenj.v dol_C64.v jap_C64.v std_C64.v std_C64GS.v) \
+  $(addprefix $(W)/drive/,$(notdir $(wildcard $(C64)/iec_drive/*.sv $(C64)/iec_drive/*.v))) \
+  stubs.sv sdram_model.sv psram_model.sv tb_system.sv
 
 VFLAGS = --binary --timing --top-module tb -Mdir $(W)/$(OBJ) -o sim_system \
   -Wno-fatal -Wno-lint -Wno-style -Wno-DECLFILENAME -Wno-WIDTH -Wno-PINMISSING -Wno-UNOPTFLAT -Wno-PROCASSWIRE \
-  -I$(CORE) --x-assign fast --x-initial fast -O2 -j 8 \
+  -I$(CORE) -I$(W)/disk --x-assign fast --x-initial fast -O2 -j 8 \
   --timescale 1ps/1ps
 ifdef TRACE
 VFLAGS += --trace-fst
 endif
 
-.PHONY: all run boot prg t64 crt tap clean vhdl
+.PHONY: all run boot prg t64 crt tap disk g64 wb dboot d81 ntsc full clean vhdl
 all: run
 
-$(W)/vhdl.stamp: gen_sid.py gen_vhdl.py ghdl_conv.sh post_ghdl.py $(wildcard $(C64)/*.vhd) $(wildcard $(C64)/t65/*.vhd)
+$(W)/vhdl.stamp: gen_sid.py gen_drive.py gen_disk.py gen_vhdl.py ghdl_conv.sh post_ghdl.py $(wildcard $(C64)/*.vhd) $(wildcard $(C64)/t65/*.vhd)
 	python3 gen_vhdl.py
 	python3 gen_sid.py
+	python3 gen_drive.py
+	python3 gen_disk.py
 	./ghdl_docker.sh sh ../../ghdl_conv.sh 2> $(W)/ghdl.log || { cat $(W)/ghdl.log; exit 1; }
 	python3 post_ghdl.py
 	touch $@
@@ -50,8 +55,12 @@ $(W)/$(OBJ)/sim_system: $(W)/vhdl.stamp $(VERILOG) $(wildcard $(CORE)/*.svh)
 run: $(W)/$(OBJ)/sim_system
 	$(W)/$(OBJ)/sim_system $(ARGS)
 
-boot prg t64 crt tap: $(W)/$(OBJ)/sim_system
+boot prg t64 crt tap disk g64 wb dboot d81 ntsc: $(W)/$(OBJ)/sim_system
 	$(W)/$(OBJ)/sim_system +test=$@ $(ARGS)
+
+full:
+	$(MAKE) run
+	for t in disk g64 wb dboot d81 ntsc; do $(MAKE) $$t || exit 1; done
 
 clean:
 	rm -rf $(W)/obj $(W)/vhdl.stamp

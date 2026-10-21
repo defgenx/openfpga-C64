@@ -2,7 +2,10 @@
 // simulation cannot use. Everything else in the sim is the real RTL.
 `timescale 1ps/1ps
 
-// ---- PLL: clk_sys 31.527954 MHz (31718 ps), clk64 = exactly 2x, edges coincide ----
+// ---- PLL: clk64 = exactly 2x clk_sys, rising edges coincide ----
+// The reconfiguration is modelled: core_top writes the fractional K (register 7) and then 'start'
+// (register 2) through pll_cfg; the PLL drops `locked` for 50 us and then runs at
+// 74.25 MHz * (7 + K / 2^32) / 9 = clk64 (PAL K = 2762266829 -> 63.05 MHz, NTSC K = 4010993429 -> 65.45 MHz).
 module pll_c64 (
 	input  wire        refclk,
 	input  wire        rst,
@@ -14,7 +17,8 @@ module pll_c64 (
 	input  wire [63:0] reconfig_to_pll,
 	output wire [63:0] reconfig_from_pll
 );
-	localparam integer HALF64 = 7930;          // clk64 period 15860 ps
+	integer half64 = 7930;                     // ps, PAL
+	integer reconfigs = 0;
 	reg c64 = 0, csys = 0, c48 = 0, c90 = 0;
 	assign reconfig_from_pll = 64'd0;
 	assign outclk_0 = c48;
@@ -29,13 +33,26 @@ module pll_c64 (
 	// falls at step 2), clk_sys_90 lags clk_sys by one step
 	initial begin
 		forever begin
-			c64 = 1; csys = 1;      #HALF64;
-			c64 = 0; c90 = 1;       #HALF64;
-			c64 = 1; csys = 0;      #HALF64;
-			c64 = 0; c90 = 0;       #HALF64;
+			c64 = 1; csys = 1;      #half64;
+			c64 = 0; c90 = 1;       #half64;
+			c64 = 1; csys = 0;      #half64;
+			c64 = 0; c90 = 0;       #half64;
 		end
 	end
-	initial forever #(HALF64 * 2 / 3) c48 = ~c48;
+	initial forever #(half64 * 2 / 3) c48 = ~c48;
+	reg start_d = 0;
+	always @(reconfig_to_pll[32]) if (reconfig_to_pll[32] !== start_d) begin : rc
+		real mult;
+		start_d = reconfig_to_pll[32];
+		reconfigs = reconfigs + 1;
+		locked = 1'b0;
+		#50_000_000;
+		mult = 7.0 + reconfig_to_pll[31:0] / 4294967296.0;
+		half64 = $rtoi(9.0e6 / (2.0 * 74.25 * mult) + 0.5);
+		$display("[%0t] PLL reconfigured: K=%0d -> clk64 half period %0d ps (clk_sys %0.3f MHz)", $time, reconfig_to_pll[31:0], half64, 1.0e6 / (4.0 * half64));
+		#10_000_000;
+		locked = 1'b1;
+	end
 endmodule
 
 module pll_cfg (
@@ -50,9 +67,18 @@ module pll_cfg (
 	output wire [63:0] reconfig_to_pll,
 	input  wire [63:0] reconfig_from_pll
 );
+	reg [31:0] k = 32'd2762266829;
+	reg        start_t = 0;
+	integer    n_writes = 0;
 	assign mgmt_waitrequest = 1'b0;
 	assign mgmt_readdata = 32'd0;
-	assign reconfig_to_pll = 64'd0;
+	assign reconfig_to_pll = {31'd0, start_t, k};
+	always @(posedge mgmt_clk) if (mgmt_write) begin
+		n_writes <= n_writes + 1;
+		$display("[%0t] pll_cfg write reg %0d <= %0d", $time, mgmt_address, mgmt_writedata);
+		if (mgmt_address == 6'd7) k <= mgmt_writedata;
+		if (mgmt_address == 6'd2) start_t <= ~start_t;
+	end
 endmodule
 
 // ---- APF data table (true dual-port RAM, one clock per port) ----
@@ -159,79 +185,3 @@ module sound_i2s #(
 	assign audio_dac  = 1'b0;
 endmodule
 
-// ---- 1541/1581 drive: idle (no disk in the PRG/CRT/TAP tests) ----
-// With the drive held in reset (no disk mounted) c1541_multi reports disk_ready = 1.
-module iec_drive #(parameter PARPORT=1, DUALROM=1, DRIVES=2)
-(
-	input         clk,
-	input   [N:0] reset,
-	input         ce,
-	input         pause,
-	input   [N:0] img_mounted,
-	input         img_readonly,
-	input  [31:0] img_size,
-	input   [1:0] img_type,
-	input   [2:0] drive_rpm,
-	input         drive_wobble,
-	output  [N:0] led,
-	output wire [7:0] out_track[NDR],
-	output wire [N:0] out_we,
-	output        disk_ready,
-	input         iec_atn_i,
-	input         iec_data_i,
-	input         iec_clk_i,
-	output        iec_data_o,
-	output        iec_clk_o,
-	input   [7:0] par_data_i,
-	input         par_stb_i,
-	output  [7:0] par_data_o,
-	output        par_stb_o,
-	input         clk_sys,
-	output [31:0] sd_lba[NDR],
-	output  [5:0] sd_blk_cnt[NDR],
-	output  [N:0] sd_rd,
-	output  [N:0] sd_wr,
-	input   [N:0] sd_ack,
-	input  [13:0] sd_buff_addr,
-	input   [7:0] sd_buff_dout,
-	output  [7:0] sd_buff_din[NDR],
-	input         sd_buff_wr,
-	input  [15:0] rom_addr,
-	input   [7:0] rom_data,
-	input         rom_wr,
-	input         rom_std,
-	input         DDRAM_BUSY,
-	output  [7:0] DDRAM_BURSTCNT,
-	output [28:0] DDRAM_ADDR,
-	input  [63:0] DDRAM_DOUT,
-	input         DDRAM_DOUT_READY,
-	output        DDRAM_RD,
-	output        DDRAM_WE,
-	output [63:0] DDRAM_DIN,
-	output  [7:0] DDRAM_BE
-);
-	localparam NDR = (DRIVES < 1) ? 1 : (DRIVES > 4) ? 4 : DRIVES;
-	localparam N   = NDR - 1;
-	assign led = '0;
-	assign out_we = '0;
-	assign disk_ready = 1'b1;
-	assign iec_data_o = 1'b1;
-	assign iec_clk_o = 1'b1;
-	assign par_data_o = 8'hFF;
-	assign par_stb_o = 1'b1;
-	assign sd_rd = '0;
-	assign sd_wr = '0;
-	assign DDRAM_BURSTCNT = 8'd0;
-	assign DDRAM_ADDR = 29'd0;
-	assign DDRAM_RD = 1'b0;
-	assign DDRAM_WE = 1'b0;
-	assign DDRAM_DIN = 64'd0;
-	assign DDRAM_BE = 8'd0;
-	genvar gi;
-	generate for (gi = 0; gi < NDR; gi = gi + 1) begin : g
-		assign out_track[gi] = 8'd0;
-		assign sd_lba[gi] = 32'd0;
-		assign sd_blk_cnt[gi] = 6'd0;
-		assign sd_buff_din[gi] = 8'd0;
-	end endgenerate
-endmodule
