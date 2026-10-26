@@ -57,6 +57,45 @@
         ]
       },
       {
+        "name": "Turbo",
+        "id": 15,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0x80000038",
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "Off"
+          },
+          {
+            "value": 1,
+            "name": "C128 2x"
+          },
+          {
+            "value": 5,
+            "name": "C128 3x"
+          },
+          {
+            "value": 9,
+            "name": "C128 4x"
+          },
+          {
+            "value": 2,
+            "name": "Smart 2x"
+          },
+          {
+            "value": 6,
+            "name": "Smart 3x"
+          },
+          {
+            "value": 10,
+            "name": "Smart 4x"
+          }
+        ]
+      },
+      {
         "name": "Joystick Port",
         "id": 5,
         "type": "list",
@@ -285,37 +324,6 @@
         "type": "action",
         "enabled": true,
         "address": "0x80000034",
-        "value": 1
-      },
-      {
-        "name": "Turbo",
-        "id": 15,
-        "type": "list",
-        "enabled": true,
-        "persist": true,
-        "address": "0x80000038",
-        "defaultval": 0,
-        "options": [
-          {
-            "value": 0,
-            "name": "Off"
-          },
-          {
-            "value": 1,
-            "name": "C128"
-          },
-          {
-            "value": 2,
-            "name": "Smart"
-          }
-        ]
-      },
-      {
-        "name": "Reset All Settings",
-        "id": 16,
-        "type": "action",
-        "enabled": true,
-        "address": "0x8000003C",
         "value": 1
       }
     ],

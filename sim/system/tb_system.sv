@@ -240,6 +240,8 @@ integer reset_n_falls = 0, tape_loaded_cnt = 0;
 realtime t_dl_rise, t_dl_fall, t_rw_rise, t_rw_fall, t_reset_fall, t_erase_start, t_erase_end, t_inj_start, t_inj_end, t_strk;
 integer erase_ev = 0;
 integer rdy_hits = 0;
+integer c6_reads = 0;   // RAM reads of $C6: one per pass of the kernal editor loop, so a CPU speed measure
+reg     ram_ce_d = 0;
 reg [7:0] first_bytes [0:7];
 
 always @(posedge dut.clk_sys) begin
@@ -269,6 +271,8 @@ always @(posedge dut.clk_sys) begin
 	if (dut.c64.cart_attached != ca_d && !quiet) $display("[%0t] cart_attached = %b", $time, dut.c64.cart_attached);
 	if (dut.media.tape_loaded) begin tape_loaded_cnt <= tape_loaded_cnt + 1; if (!quiet) $display("[%0t] media.tape_loaded pulse", $time); end
 	if (dut.c64.c64_addr >= 16'hE5CD && dut.c64.c64_addr <= 16'hE5D5) rdy_hits <= rdy_hits + 1;
+	ram_ce_d <= dut.c64.ram_ce;
+	if (dut.c64.ram_ce && !ram_ce_d && !dut.c64.ram_we && dut.c64.c64_addr == 16'h00C6) c6_reads <= c6_reads + 1;
 end
 
 reg [5:0] st_d = 0;
@@ -542,6 +546,37 @@ task automatic test_boot;
 		check(rdy_hits > 1000, "CPU executes the kernal editor loop $E5CD-$E5D5");
 		check(sdr.err == 0, "no SDRAM protocol errors so far");
 		$display("   PLL locked at 20 us; c64 at_prompt=%b basic_main=%b", dut.c64.at_prompt, dut.c64.basic_main);
+	end
+endtask
+
+// editor-loop passes in 20 ms at the current Turbo setting
+task automatic loop_rate(output integer n);
+	integer c0;
+	begin
+		apf_run_us(2000);
+		c0 = c6_reads;
+		apf_run_us(20000);
+		n = c6_reads - c0;
+	end
+endtask
+
+task automatic test_turbo;
+	integer n_off, n_2x, n_4x;
+	reg [31:0] rd;
+	begin
+		$display("== TEST: Turbo setting (bridge 0x80000038 = speed << 2 | mode) ==");
+		loop_rate(n_off);
+		apf_wr(32'h80000038, 10);   // Smart 4x
+		apf_rd(32'h80000038, rd);
+		check(rd == 10, "Turbo register reads back what was written");
+		loop_rate(n_4x);
+		apf_wr(32'h80000038, 2);    // Smart 2x, the old "Smart"
+		loop_rate(n_2x);
+		apf_wr(32'h80000038, 0);
+		$display("   editor loop passes per 20 ms: off %0d, smart 2x %0d, smart 4x %0d", n_off, n_2x, n_4x);
+		check(n_off > 0, "editor loop runs with Turbo off");
+		check(n_2x * 10 > n_off * 17, "Smart 2x runs the CPU at least 1.7x as fast");
+		check(n_4x * 10 > n_off * 30, "Smart 4x runs the CPU at least 3x as fast");
 	end
 endtask
 
@@ -897,8 +932,9 @@ initial begin
 	if (testsel == "wb") test_disk(2);
 	if (testsel == "dboot") test_disk(3);
 	if (testsel == "d81") test_disk(4);
-	if (testsel == "all" || testsel == "boot" || testsel == "prg" || testsel == "t64" || testsel == "crt" || testsel == "tap")
+	if (testsel == "all" || testsel == "boot" || testsel == "prg" || testsel == "t64" || testsel == "crt" || testsel == "tap" || testsel == "turbo")
 		test_boot;
+	if (fails == 0 && (testsel == "all" || testsel == "turbo")) test_turbo;
 	if (fails == 0 && (testsel == "all" || testsel == "prg")) begin
 		test_prg(3, 8'hAA, 8'h55, "size%4==3");
 		test_prg(0, 8'hC3, 8'h3C, "size%4==0");

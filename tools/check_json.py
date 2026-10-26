@@ -83,6 +83,11 @@ for core_dir in sorted((ROOT / "Cores").iterdir()):
             check(len(opts) <= 16, f"{n}/interact.json {x['name']}", "max 16 options")
             for o in opts:
                 maxlen(o["name"], 23, f"{n}/interact.json option")
+        # the menu shows at most 20 settings + reloadable slots; past that the Pocket drops settings
+        if d:
+            reload = sum(1 for s in d["data"]["data_slots"] if int(str(s.get("parameters", 0)), 0) & 1)
+            check(len(v) + reload <= 20, f"{n}/interact.json",
+                  f"{len(v)} variables + {reload} reloadable slots, max 20 menu entries")
 
     p = load(core_dir / "input.json")
     if p:

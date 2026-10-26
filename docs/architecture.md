@@ -153,7 +153,8 @@ DDR video bus on its edges, and a clock made in logic has no fixed phase, which 
 ## Settings
 
 Each `interact.json` entry writes its own register; all are read back, so APF shows (and saves) whatever
-the core holds.
+the core holds. The menu holds at most 20 entries, settings plus reloadable data slots (5 here); past that
+the Pocket drops settings, so there are 15 and `tools/check_json.py` enforces it.
 
 | Address      | Setting             | Values (c64.sv status bits)                         |
 |--------------|---------------------|-----------------------------------------------------|
@@ -171,8 +172,7 @@ the core holds.
 | `0x8000002C` | Palette             | status[84:82]                                       |
 | `0x80000030` | Drive Display       | status[86:85]: 0 activity, 1 if mounted, 3 off      |
 | `0x80000034` | Tape Play/Pause     | any write (status[7] pulse)                         |
-| `0x80000038` | Turbo               | status[47:46]: 0 off, 1 C128, 2 smart               |
-| `0x8000003C` | Reset All Settings  | any write: every register to its default, then a reset |
+| `0x80000038` | Turbo               | [1:0] status[47:46]: 0 off, 1 C128, 2 smart; [3:2] status[49:48]: 2x/3x/4x |
 
 Bits not listed keep c64.sv's defaults (all 0): loadable System ROM, parallel drive port enabled, drives
 enabled when a disk is mounted, PRG autorun, tape autoplay.

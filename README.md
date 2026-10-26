@@ -15,7 +15,7 @@ Commodore 64 core (Sorgelig and contributors, built on Peter Wendrich's FPGA64),
   the card in the background); it becomes a 1581 for `.d81` images
 * `.prg` and `.t64` programs (loaded and started with RUN), `.crt` cartridges, `.tap` tapes
 * Loadable System ROM: JiffyDOS, DolphinDOS, SpeedDOS (same files as on MiSTer)
-* REU up to 16 MB, second SID (stereo), C128 / smart turbo
+* REU up to 16 MB, second SID (stereo), C128 / smart turbo at 2x, 3x or 4x
 * 1351 mouse, user port 4-player adapter (Dock controllers 3 and 4)
 * Playable handheld, no typing needed:
   * **autostart** — a disk or tape picked at the BASIC prompt is loaded and run (`LOAD"*",8,1` / `RUN`
@@ -108,6 +108,7 @@ On the Pocket: press the Analogue button while the core runs → *Core Settings*
 | Reset & Detach Cart | –                                        | resets without the cartridge                         |
 | Model               | C64 (6581 SID) / C64C (8580 SID)         | also picks the VIC-II and CIA of that model          |
 | Video               | PAL / NTSC                               | resets the C64; most European software needs PAL     |
+| Turbo               | Off / C128 / Smart, each at 2x / 3x / 4x | faster CPU; Smart fixes games such as Into the Eagle's Nest |
 | Joystick Port       | Port 2 / Port 1                          | which port the Pocket's pad is                        |
 | Pad Mode            | Joystick / Keys / Mouse                  | the mode the pad starts in; Start cycles them        |
 | Second SID          | Off / D420 / D500 / DE00 / DF00          | stereo: the second SID on the right channel          |
@@ -118,8 +119,6 @@ On the Pocket: press the Analogue button while the core runs → *Core Settings*
 | Palette             | Colodore, Ultimate, Pepto, VICE …        |                                                      |
 | Drive Display       | Activity / If Mounted / Off              | drive number and track on screen (red while writing) |
 | Tape Play/Pause     | –                                        | the tape normally starts and stops by itself         |
-| Turbo               | Off / C128 / Smart                       | faster CPU for software that supports it             |
-| Reset All Settings  | –                                        | every setting back to its default, then a reset      |
 
 Settings are saved on the card (`Settings/defgenx.C64/`) and come back at the next start.
 
@@ -128,7 +127,7 @@ Settings are saved on the card (`Settings/defgenx.C64/`) and come back at the ne
 | What you see | What to do |
 |---|---|
 | **"Load error in 'core'" / "General error"** when starting the core | An old or mixed install. Run the installer again and answer **a** (replace all), or delete `Cores/defgenx.C64/` from the card first. |
-| **Black or rolling picture after changing a setting** | *Core Settings → Reset All Settings*. If the menu doesn't help: `./install.sh --reset-settings` (Windows: `install.bat -ResetSettings`), or delete `Settings/defgenx.C64/` on the card. |
+| **Black or rolling picture after changing a setting** | Erase the saved settings: `./install.sh --reset-settings` (Windows: `install.bat -ResetSettings`), or delete `Settings/defgenx.C64/` on the card. |
 | **`?DEVICE NOT PRESENT ERROR`** | No disk in the drive: pick one in *Disk*. Only drive 8 exists. A `.d64` smaller than 174,848 bytes is not a disk image. |
 | **The joystick does nothing** | Press **Start** until the label shows JOYSTICK, then **hold Select** to swap the port. |
 | **A disk did not start by itself** | The C64 was not at the BASIC prompt (or *Autostart* is off): *Reset*, then pick the disk again, or type `LOAD"*",8,1` and `RUN`. |
@@ -152,6 +151,9 @@ git clone --recursive <this repo>
 
 On Apple Silicon the Docker build runs under x86 emulation and is slow; the image needs ~15 GB of free
 space in Docker's VM.
+
+The platform picture `dist/Platforms/_images/c64.bin` is generated: edit `tools/gen_platform_image.py`
+and run `python3 tools/gen_platform_image.py [preview.png]`.
 
 ## Tests
 

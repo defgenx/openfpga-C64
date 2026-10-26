@@ -547,7 +547,7 @@ reg  [1:0] cfg_wp       = 2'd0;   // bit 0: disk write protected
 reg        cfg_borders  = 1'b1;
 reg  [2:0] cfg_palette  = 3'd0;
 reg  [1:0] cfg_drvosd   = 2'd0;   // 0 activity, 1 if mounted, 3 off
-reg  [1:0] cfg_turbo    = 2'd0;   // 0 off, 1 C128, 2 smart
+reg  [3:0] cfg_turbo    = 4'd0;   // [1:0] 0 off, 1 C128, 2 smart; [3:2] 0 2x, 1 3x, 2 4x
 
 always @(posedge clk_74a) begin
 	if (bridge_wr && bridge_addr[31:8] == 24'h800000) begin
@@ -566,13 +566,7 @@ always @(posedge clk_74a) begin
 		8'h2C: cfg_palette  <= bridge_wr_data[2:0];
 		8'h30: cfg_drvosd   <= bridge_wr_data[1:0];
 		8'h34: cfg_play_t   <= ~cfg_play_t;
-		8'h38: cfg_turbo    <= bridge_wr_data[1:0];
-		8'h3C: begin   // Reset All Settings: defaults, then a reset
-			cfg_model <= 1'b0; cfg_ntsc <= 1'b0; cfg_joyport <= 1'b0; cfg_padmode <= 2'd0;
-			cfg_sid2 <= 3'd0; cfg_auto <= 1'b1; cfg_reu <= 2'd0; cfg_wp <= 2'd0; cfg_borders <= 1'b1;
-			cfg_palette <= 3'd0; cfg_drvosd <= 2'd0; cfg_turbo <= 2'd0;
-			cfg_reset_t <= ~cfg_reset_t;
-		end
+		8'h38: cfg_turbo    <= bridge_wr_data[3:0];
 		default: ;
 		endcase
 	end
@@ -612,7 +606,7 @@ wire [1:0] wp_s       = cfg_s[14:13];
 wire       borders_s  = cfg_s[15];
 wire [2:0] palette_s  = cfg_s[18:16];
 wire [1:0] drvosd_s   = cfg_s[20:19];
-wire [1:0] turbo_s    = cfg_s[22:21];
+wire [3:0] turbo_s    = cfg_s[24:21];
 
 // menu actions become pulses of a few hundred clocks
 reg  [2:0] act_d;
@@ -972,8 +966,9 @@ assign status[27:26]  = (pad_mouse_mode || mouse_present) ? 2'd1 : 2'd0;   // po
 assign status[33:28]  = 6'd0;
 assign status[35:34]  = model_s ? 2'd1 : 2'd0;       // VIC-II 656x / 856x
 assign status[45:36]  = {model_s, 9'd0};             // [45] CIA 8521
-assign status[47:46]  = {turbo_s == 2'd2, turbo_s == 2'd1};
-assign status[52:48]  = 5'd0;
+assign status[47:46]  = {turbo_s[1:0] == 2'd2, turbo_s[1:0] == 2'd1};   // Turbo mode
+assign status[49:48]  = turbo_s[3:2];                // Turbo speed
+assign status[52:50]  = 3'd0;
 assign status[54:53]  = reu_s;                       // REU
 assign status[75:55]  = 21'd0;
 assign status[77:76]  = wp_s;                        // mount write protected

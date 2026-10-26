@@ -32,7 +32,8 @@ SD card root
 │       ├── c64.rbf_r            <- the core bitstream
 │       ├── core.json  data.json  input.json  interact.json  video.json ...
 └── Platforms/
-    └── c64.json
+    ├── c64.json
+    └── _images/c64.bin          <- the platform picture
 ```
 
 On macOS, copy the folders with Finder or `ditto`. Don't replace the existing `Assets`, `Cores` or
@@ -87,7 +88,7 @@ Useful settings (*Core Settings*):
 | Model         | C64 (6581 SID) or C64C (8580 SID)                         |
 | Borders       | Show or hide the screen borders                           |
 | Reset         | Like switching the C64 off and on, keeping the cartridge  |
-| Reset All Settings | Puts every setting back to its default, then a reset |
+| Turbo         | Faster CPU; *Smart* fixes games such as Into the Eagle's Nest |
 
 ## Controls
 
@@ -108,8 +109,7 @@ keyboard and mouse work too (Esc = Run/Stop, Tab = C=, F11 = Restore).
 
 ## Troubleshooting
 
-* **Stuck after changing a setting:** in *Core Settings* choose **Reset All Settings**. If you cannot
-  reach the menu, erase the saved settings: `./install.sh --reset-settings` (Windows:
+* **Stuck after changing a setting:** erase the saved settings: `./install.sh --reset-settings` (Windows:
   `install.bat -ResetSettings`), or delete the folder `Settings/defgenx.C64/` on the card.
 * **`?DEVICE NOT PRESENT ERROR`:** no disk in drive 8 — pick one in *Disk*.
 * **The joystick does nothing:** Start until the label says JOYSTICK, then hold Select to swap the port.

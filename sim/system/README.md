@@ -6,7 +6,7 @@ model and a 16-bit SDR SDRAM model. It exercises the PRG / T64 / CRT / TAP path 
 only covers against a model of the C64 side.
 
     make -C sim/system            # build (first time: converts the VHDL in Docker) and run all tests
-    make -C sim/system prg        # boot + PRG only (also: boot, t64, crt, tap)
+    make -C sim/system prg        # boot + PRG only (also: boot, t64, crt, tap, turbo)
     make -C sim/system TRACE=1 ARGS="+dump_from=637000 +dump_to=640000"   # FST in work/system.fst
 
 A run takes ~2 minutes of wall time per simulated second of C64 time (boot is 0.58 s sim time).
@@ -49,7 +49,7 @@ Everything generated is under `work/` (git-ignored).
 
 | target | what | sim time / wall time (several runs in parallel on a busy machine) |
 |--------|------|------|
-| `make` (boot, prg x2, t64, crt, tap) | default suite on one boot, with the real 1541/1581 present | 4 s / 8.5 min, 30 checks |
+| `make` (boot, turbo, prg x2, t64, crt, tap) | default suite on one boot, with the real 1541/1581 present | 4 s / 8.5 min, 30 checks |
 | ntsc | Video register = NTSC: PLL reconfig (K written, `locked` drops), C64 reset, 32.73 MHz, READY, PRG | 2 s / 4 min, 15 checks |
 | disk | D64 picked (0x008A) at the prompt, G64 built by c64_media in PSRAM == `sim/gcr_ref.py`, autostart LOAD"*",8,1 + RUN, signature | 5 s / 16 min, 9 checks; signature 4.2 s after the mount |
 | g64 | the same program as a G64: copied byte for byte into PSRAM | 5 s / 16 min, 9 checks |

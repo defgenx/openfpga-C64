@@ -43,7 +43,7 @@ autostart:
 osk:
 	mkdir -p video
 	iverilog -g2012 -I$(CORE) -o osk_tb.vvp osk_tb.sv $(CORE)/osk.sv
-	vvp -n osk_tb.vvp | grep -v finish
+	vvp -n osk_tb.vvp | { grep -v finish || true; }   # prints nothing but $$finish when all is well
 	rm -f osk_tb.vvp
 	python3 ppm2png.py video/osk_frame.ppm video/osk_frame.png
 	python3 ppm2png.py video/load_frame.ppm video/load_frame.png
