@@ -1,11 +1,11 @@
-// osk_tb.sv - renders osk_overlay on a 382x270 C64 frame (borders view) to PPM:
+// osk_tb.sv - renders osk_overlay on a 384x270 C64 frame (borders view) to PPM:
 //   osk_frame.ppm   keyboard shown, cursor on RS, SHIFT latched, PORT 2 badge
 //   load_frame.ppm  loading screen, LOADING DISK 42%
 `timescale 1ns/1ps
 module osk_tb;
 	reg clk = 0;
 	always #5 clk = ~clk;
-	localparam W = 382, H = 270;
+	localparam W = 384, H = 270;
 	reg  [23:0] in_rgb;
 	reg in_de = 0, in_skip = 0, in_hs = 0, in_vs = 0;
 	reg loading = 0;

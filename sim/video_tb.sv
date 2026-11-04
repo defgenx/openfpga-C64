@@ -30,7 +30,7 @@ module video_tb;
 		void'($value$plusargs("ppm=%s", ppmfile));
 		if (!$value$plusargs("ntsc=%d", ntsc)) ntsc = 0;
 		if (!$value$plusargs("borders=%d", borders)) borders = 1;
-		W = borders ? (ntsc ? 404 : 382) : 320;
+		W = borders ? (ntsc ? 404 : 384) : 320;
 		H = borders ? (ntsc ? 250 : 270) : 200;
 		SLOT = ntsc * 2 + (borders ? 0 : 1);
 		flags = 4'b0011; col = 0; cr = 0;

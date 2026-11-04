@@ -20,10 +20,16 @@ Numbers measured with C64_MiSTer's own `video_vicII_656x` and `video_sync`, simu
 
 | Slot | Mode              | Window           | Size    | Aspect |
 |------|-------------------|------------------|---------|--------|
-| 0    | PAL, borders      | whole area       | 382×270 | 53:40  |
+| 0    | PAL, borders      | x 0, y 0         | 384×270 | 4:3    |
 | 1    | PAL, no borders   | x 32, y 34       | 320×200 | 3:2    |
-| 2    | NTSC, borders     | whole area       | 404×250 | 40:33  |
+| 2    | NTSC, borders     | x 0, y 0         | 404×250 | 40:33  |
 | 3    | NTSC, no borders  | x 43, y 25       | 320×200 | 6:5    |
+
+A line is sampled from the `hblank` fall up to the window's end, not up to the `hblank` rise: PAL's
+border window is 384 wide, 2 pixels past the 382-pixel active area, so that it has 32 pixels of border on
+each side. The VIC still draws the border there (its own blanking starts 7 pixels later). Every scaler
+width is a multiple of 4, as in other Pocket cores: the PAL border mode used to be 382 wide, and its
+picture was reported broken on hardware while the 404-wide NTSC one was fine.
 
 Aspect ratios come from the pixel clocks (PAL pixels ≈ 0.94:1, NTSC ≈ 0.75:1). The slot is announced on
 the first clock with DE low after each line (`video_rgb = {8'h00, slot, 13'h0}`). HS is the `hblank` fall

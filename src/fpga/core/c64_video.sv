@@ -42,7 +42,7 @@ reg        ntsc_f, borders_f;   // latched per frame
 
 always @(*) begin
 	case ({ntsc_f, borders_f})
-		2'b01: begin x0 = 9'd0;  w = 9'd382; y0 = 9'd0;  h = 9'd270; slot = SLOT_PAL_BORDER;  end
+		2'b01: begin x0 = 9'd0;  w = 9'd384; y0 = 9'd0;  h = 9'd270; slot = SLOT_PAL_BORDER;  end
 		2'b00: begin x0 = 9'd32; w = 9'd320; y0 = 9'd34; h = 9'd200; slot = SLOT_PAL_FULL;    end
 		2'b11: begin x0 = 9'd0;  w = 9'd404; y0 = 9'd0;  h = 9'd250; slot = SLOT_NTSC_BORDER; end
 		default: begin x0 = 9'd43; w = 9'd320; y0 = 9'd25; h = 9'd200; slot = SLOT_NTSC_FULL; end
@@ -51,19 +51,21 @@ end
 
 reg  [1:0] sub;
 reg  [8:0] px, py;
-reg        sampling;            // in_win a line's active area
+reg        sampling;            // from the hblank fall to the sample at x0 + w
 reg        hb_d, vb_d, vs_d;
 
 wire hb_fall = hb_d & ~hblank;
-wire hb_rise = ~hb_d & hblank;
 wire vb_fall = vb_d & ~vblank;
 wire vs_rise = ~vs_d & vsync;
 
-wire sample = sampling && !hblank && sub == 2'd1;  // 2 clocks after the hblank fall, then every 4
+// Not gated by hblank: PAL's 384-pixel window runs 2 pixels past the hblank rise,
+// where the VIC still draws the border (docs/video.md).
+wire sample = sampling && sub == 2'd1;  // 2 clocks after the hblank fall, then every 4
+wire x_end  = px == x0 + w;
 wire in_x   = (px >= x0) && (px < x0 + w);
 wire in_y   = (py >= y0) && (py < y0 + h) && !vblank;
 wire in_win = sample && in_x && in_y;
-reg  span;                      // the last sampled pixel was in_win the window
+reg  span;                      // the last sampled pixel was in the window
 wire de     = sample ? (in_x && in_y) : span;
 
 always @(posedge clk) begin
@@ -77,15 +79,14 @@ always @(posedge clk) begin
 		px <= 9'd0;
 		sampling <= 1'b1;
 	end
-	if (hb_rise) begin
-		sampling <= 1'b0;
-		span <= 1'b0;
-		if (!vblank) py <= py + 9'd1;
-	end
 	if (vb_fall) py <= 9'd0;
 	if (sample) begin
 		px <= px + 9'd1;
 		span <= in_x && in_y;
+		if (x_end) begin            // one sample past the window: DE has dropped
+			sampling <= 1'b0;
+			if (!vblank) py <= py + 9'd1;
+		end
 	end
 
 	if (vs_rise) begin
