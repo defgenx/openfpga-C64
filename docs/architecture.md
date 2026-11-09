@@ -49,6 +49,15 @@ exactly what it can consume with target commands. Bridge buffers: read `0x1000_0
 write `0x1000_4000`–`0x1000_5FFF`. The command engine runs on `clk_74a`, everything else on `clk_sys`;
 requests cross as a toggle handshake whose parameters are held stable until the acknowledge returns.
 
+A Data slot Write (`0x0184`) reads the write buffer one word ahead: the Pocket OS reads `length / 4 + 1`
+words from `bridgeaddr` and drops the first sample, so file word *w* receives what the core returns at
+`bridgeaddr + 4(w+1)`. The write buffer's bridge port therefore returns the word **before** the one
+addressed, and `media_tb.sv` reads the bridge the same way. Served at the address as addressed, every
+written block lands 4 bytes early (its first word lost, the next block's first word appended): D64 sectors,
+G64 tracks and D81 blocks alike. Other Pocket cores (MacLC_pocket, openfpga-apple2e) measured the same on
+hardware; an OS update that changes it would shift writes again, which the write round trip
+(save, pull the card, compare) shows.
+
 | Slot | File        | ioctl index | Handling |
 |------|-------------|-------------|----------|
 | 0    | Program     | `0x01`      | streamed; c64.sv resets, waits for the kernal, injects the PRG and types RUN. A T64 is streamed as a PRG (below) |

@@ -70,15 +70,18 @@ module media_tb;
 			t_done <= 0;
 			n_cmds = n_cmds + 1;
 			repeat (20) @(posedge clk_74a);
-			for (i = 0; i < t_len; i = i + 4) begin
+			// as the Pocket OS does: one read more than the length, the first sample
+			// dropped, so file word w is what the core returns at bridgeaddr + 4(w+1)
+			for (i = 0; i <= t_len; i = i + 4) begin
 				bridge_addr <= t_baddr + i;
 				repeat (3) @(posedge clk_74a);
 				w = bridge_rd_data;
-				for (k = 0; k < 4; k = k + 1)
-					if (i + k < t_len) begin
-						if (t_id == 2) slot2[t_off + i + k] = w[31 - k*8 -: 8];
-						if (t_id == 3) slot3[t_off + i + k] = w[31 - k*8 -: 8];
-					end
+				if (i > 0)
+					for (k = 0; k < 4; k = k + 1)
+						if (i - 4 + k < t_len) begin
+							if (t_id == 2) slot2[t_off + i - 4 + k] = w[31 - k*8 -: 8];
+							if (t_id == 3) slot3[t_off + i - 4 + k] = w[31 - k*8 -: 8];
+						end
 			end
 			repeat (10) @(posedge clk_74a);
 			t_done <= 1;

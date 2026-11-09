@@ -138,8 +138,11 @@ always @(posedge clk_sys) if (wbuf_we) begin
 	endcase
 end
 
+// a Data slot Write stores at file word w what is read at bridgeaddr + 4(w+1): serve the word
+// before the one addressed. See docs/architecture.md, Media.
+wire [10:0] wbuf_raddr = bridge_addr[12:2] - 11'd1;
 always @(posedge clk_74a)
-	bridge_rd_data <= {wbuf0[bridge_addr[12:2]], wbuf1[bridge_addr[12:2]], wbuf2[bridge_addr[12:2]], wbuf3[bridge_addr[12:2]]};
+	bridge_rd_data <= {wbuf0[wbuf_raddr], wbuf1[wbuf_raddr], wbuf2[wbuf_raddr], wbuf3[wbuf_raddr]};
 
 /* ------------------------------------------------------------------------ */
 /* clk_74a: slot sizes and the target command engine                        */

@@ -25,7 +25,8 @@ def hexfile(p, data):
 
 def readhex(p):
     words = [l.split("//")[0].strip() for l in p.read_text().splitlines()]
-    return bytes(int(x, 16) for w in words for x in w.split() if not x.startswith("@"))
+    # undriven bytes (x) read as 0 so a wrong write-back fails its check instead of crashing
+    return bytes(int(x.replace("x", "0"), 16) for w in words for x in w.split() if not x.startswith("@"))
 
 
 def rnd(n):
