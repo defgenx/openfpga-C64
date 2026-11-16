@@ -7,5 +7,6 @@ sim/vic/trace_*.txt
 sim/vic/*.ppm
 sim/vic/work/
 sim/__pycache__/
+sim/system/__pycache__/
 tools/__pycache__/
 sim/system/work/

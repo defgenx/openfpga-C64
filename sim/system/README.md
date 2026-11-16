@@ -55,10 +55,12 @@ Everything generated is under `work/` (git-ignored).
 | g64 | the same program as a G64: copied byte for byte into PSRAM | 5 s / 16 min, 9 checks |
 | dboot | disk already in the datatable at boot (persisted disk, boot scan) | 4.4 s / 15 min, 6 checks |
 | wb | program SAVEs "OUT" over IEC; the D64 held by the APF model must hold file, directory entry and BAM | 9 s / 25 min, 15 checks; flush 0.23 s after SAVE returns |
+| wb2 | SAVE a 25-block "OUT", scratch it (`S0:OUT`), SAVE it again (default DolphinDOS kernal and drive ROM): closed PRG, 25 blocks, chain holds the second SAVE, sectors allocated in the BAM | 15 s / 55 min, 14 checks |
 | d81 | the same disk as D81 (1581) | 5 s / 13 min, 9 checks |
 
 `gen_disk.py` writes the images and programs (`work/disk/*.hex`, `disk.vh`). The APF model also serves
-Dataslot Write (0x0184): it reads the core's write buffer over the bridge and updates the slot's file.
+Dataslot Write (0x0184): like the Pocket, it reads the core's write buffer one word ahead (file word *i* is
+bridge word *i*+1) and updates the slot's file.
 
 `+screen=1` prints the C64 screen text once per simulated second (useful while a LOAD runs).
 c1581_drv.sv is copied with T65's open `rdy/abort_n/nmi_n/so_n` tied to 1: they rely on VHDL port defaults

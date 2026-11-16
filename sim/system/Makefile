@@ -1,7 +1,7 @@
 # Full-system simulation of the Pocket core (core_top) in Verilator.
 #   make            build and run all tests
 #   make prg|t64|crt|tap|boot|turbo   one test (each starts from power-on)
-#   make disk|g64|wb|dboot|d81|ntsc   disk and NTSC tests (slow: minutes to an hour of wall time)
+#   make disk|g64|wb|wb2|dboot|d81|ntsc   disk and NTSC tests (slow: minutes to an hour of wall time)
 #   make full       the default suite and every disk / NTSC test, one simulation each
 #   make TRACE=1 ...        build with FST tracing (use +dump=<from_us>,<to_us> via ARGS)
 # Needs: verilator >= 5, python3, docker (hdlc/ghdl:yosys, only to convert the VHDL).
@@ -35,7 +35,7 @@ ifdef TRACE
 VFLAGS += --trace-fst
 endif
 
-.PHONY: all run boot prg t64 crt tap turbo disk g64 wb dboot d81 ntsc full clean vhdl
+.PHONY: all run boot prg t64 crt tap turbo disk g64 wb wb2 dboot d81 ntsc full clean vhdl
 all: run
 
 $(W)/vhdl.stamp: gen_sid.py gen_drive.py gen_disk.py gen_vhdl.py ghdl_conv.sh post_ghdl.py $(wildcard $(C64)/*.vhd) $(wildcard $(C64)/t65/*.vhd)
@@ -55,12 +55,12 @@ $(W)/$(OBJ)/sim_system: $(W)/vhdl.stamp $(VERILOG) $(wildcard $(CORE)/*.svh)
 run: $(W)/$(OBJ)/sim_system
 	$(W)/$(OBJ)/sim_system $(ARGS)
 
-boot prg t64 crt tap turbo disk g64 wb dboot d81 ntsc: $(W)/$(OBJ)/sim_system
+boot prg t64 crt tap turbo disk g64 wb wb2 dboot d81 ntsc: $(W)/$(OBJ)/sim_system
 	$(W)/$(OBJ)/sim_system +test=$@ $(ARGS)
 
 full:
 	$(MAKE) run
-	for t in disk g64 wb dboot d81 ntsc; do $(MAKE) $$t || exit 1; done
+	for t in disk g64 wb wb2 dboot d81 ntsc; do $(MAKE) $$t || exit 1; done
 
 clean:
 	rm -rf $(W)/obj $(W)/vhdl.stamp

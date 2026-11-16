@@ -201,9 +201,10 @@ task automatic apf_poll_once;
 				wr_cmds = wr_cmds + 1;
 				if (!quiet) $display("[%0t] APF: target WRITE slot %0d offset %0d bridge %h length %0d", $time, id, off, baddr, len);
 				apf_wr(32'hF8001000, 32'h62750000);
+				// the Pocket reads one word ahead and drops the first: file word i is bridge word i+1
 				nw = (len + 3) / 4;
 				for (i = 0; i < nw; i = i + 1) begin
-					apf_rd(baddr + 4 * i, w);
+					apf_rd(baddr + 4 * (i + 1), w);
 					for (b = 0; b < 4; b = b + 1)
 						if (i * 4 + b < len) slot_data[id][off + i * 4 + b] = w[31 - 8 * b -: 8];
 				end
@@ -745,9 +746,20 @@ task automatic check_psram_image(input string fname, input integer size, input [
 	end
 endtask
 
-// kind: 0 D64 picked at the prompt, 1 G64, 2 D64 + write-back, 3 D64 found by the boot datatable scan, 4 D81
+// D64 sector index of track t (1-35), sector s
+function automatic integer d64_sec(input integer t, input integer s);
+	d64_sec = s + ((t <= 17) ? (t-1)*21 : (t <= 24) ? 357 + (t-18)*19 : (t <= 30) ? 490 + (t-25)*18 : 598 + (t-31)*17);
+endfunction
+
+// byte n of the file wb2.d64's program saves the second time: load address $2000, then y ^ page ^ $A5
+function automatic [7:0] wb2_byte(input integer n);
+	wb2_byte = (n == 0) ? 8'h00 : (n == 1) ? 8'h20 : (((n-2) % 256) ^ (8'h20 + (n-2) / 256) ^ 8'hA5);
+endfunction
+
+// kind: 0 D64 picked at the prompt, 1 G64, 2 D64 + write-back, 3 D64 found by the boot datatable scan, 4 D81,
+//       5 D64 + SAVE, scratch, SAVE of a 25-block file
 task automatic test_disk(input integer kind);
-	integer k, size, m0, found, w0, lastsec;
+	integer k, size, m0, found, w0, lastsec, t, sct, o, n, blks;
 	realtime tpick, tsig, tdone;
 	string f, ref_f;
 	reg [7:0] pat [0:15];
@@ -758,6 +770,7 @@ task automatic test_disk(input integer kind);
 		0, 3: begin f = "work/disk/run.d64.hex"; size = `D64_SIZE; ref_f = "work/disk/run.g64_ref.hex"; end
 		1:    begin f = "work/disk/run.g64.hex"; size = `G64_SIZE; ref_f = "work/disk/run.g64_ref.hex"; end
 		2:    begin f = "work/disk/wb.d64.hex";  size = `D64_SIZE; ref_f = "work/disk/wb.g64_ref.hex"; end
+		5:    begin f = "work/disk/wb2.d64.hex"; size = `D64_SIZE; ref_f = "work/disk/wb2.g64_ref.hex"; end
 		default: begin f = "work/disk/run.d81.hex"; size = `D81_SIZE; ref_f = ""; end
 		endcase
 		$display("== TEST: disk kind %0d (%0s, %0d bytes) ==", kind, f, size);
@@ -782,7 +795,40 @@ task automatic test_disk(input integer kind);
 		if (kind != 4) check_psram_image(ref_f, (kind == 1) ? size : `G64_SIZE, "G64 image in PSRAM equals sim/gcr_ref.py synth_g64 / the file");
 		if (kind == 4) check(dut.img_type == 2'b11, "img_type = 1581");
 		// autostart: LOAD"*",8,1 then RUN, the first PRG loads over IEC and runs
-		if (kind == 2) begin
+		if (kind == 5) begin
+			for (k = 0; k < 900 && !(pk(25'hC002) == 8'h77); k = k + 1) apf_run_us(100000);
+			tsig = $realtime;
+			$display("   both SAVEs done %0.2f s after the mount (C002=%h C003=%h C004=%h)", (tsig - t_mount) / 1e12, pk(25'hC002), pk(25'hC003), pk(25'hC004));
+			check(pk(25'hC002) == 8'h77 && pk(25'hC003) == 8'h00 && pk(25'hC004) == 8'h00, "both SAVEs returned without error");
+			for (k = 0; k < 400 && !(wr_cmds > 0 && ($realtime - t_wr_last) > 1.5e12 && ($realtime - tsig) > 1.5e12); k = k + 1) apf_run_us(100000);
+			$display("   write-back: %0d Dataslot Write commands, last at %0.2f s after the second SAVE returned", wr_cmds, (t_wr_last - tsig) / 1e12);
+			// directory entry "OUT": closed PRG, 25 blocks; its chain holds the second SAVE, used in the BAM
+			found = -1;
+			for (k = 0; k < 8; k = k + 1)
+				if (slot_data[2][(357+1)*256 + 32*k + 5] == "O" && slot_data[2][(357+1)*256 + 32*k + 6] == "U" &&
+				    slot_data[2][(357+1)*256 + 32*k + 7] == "T" && slot_data[2][(357+1)*256 + 32*k + 8] == 8'hA0) found = k;
+			check(found >= 0, "directory has the file OUT");
+			if (found >= 0) begin
+				m0 = (357+1)*256 + 32*found;
+				check(slot_data[2][m0 + 2] == 8'h82, "OUT is a closed PRG");
+				check(slot_data[2][m0 + 30] == 8'd25 && slot_data[2][m0 + 31] == 8'd0, "OUT has 25 blocks");
+				w0 = 0; lastsec = 0;     // w0: bytes compared that differ, lastsec: blocks free in the BAM
+				t = slot_data[2][m0 + 3]; sct = slot_data[2][m0 + 4]; n = 0; blks = 0;
+				while (t != 0 && blks < 30) begin
+					o = d64_sec(t, sct) * 256;
+					if (slot_data[2][357*256 + 4*t + 1 + sct/8][sct%8]) lastsec = lastsec + 1;
+					for (k = 2; k < ((slot_data[2][o] != 0) ? 256 : slot_data[2][o+1] + 1); k = k + 1) begin
+						if (slot_data[2][o + k] !== wb2_byte(n)) w0 = w0 + 1;
+						n = n + 1;
+					end
+					blks = blks + 1;
+					t = slot_data[2][o]; sct = slot_data[2][o + 1];
+				end
+				$display("   OUT: %0d blocks in the chain, %0d bytes, %0d differ, %0d free in the BAM", blks, n, w0, lastsec);
+				check(blks == 25 && n == 6146 && w0 == 0, "OUT's chain holds the data of the second SAVE");
+				check(lastsec == 0, "OUT's sectors are allocated in the BAM");
+			end
+		end else if (kind == 2) begin
 			for (k = 0; k < 600 && !(pk(25'hC002) == 8'h77); k = k + 1) apf_run_us(100000);
 			tsig = $realtime;
 			$display("   program finished its SAVE %0.2f s after the mount (C000=%h C001=%h C002=%h C003=%h)", (tsig - t_mount) / 1e12, pk(25'hC000), pk(25'hC001), pk(25'hC002), pk(25'hC003));
@@ -810,10 +856,11 @@ task automatic test_disk(input integer kind);
 			for (k = 0; k < `D64_SIZE - 16; k = k + 1) begin
 				if (slot_data[2][k] == pat[0] && slot_data[2][k+1] == pat[1] && slot_data[2][k+7] == pat[7] && slot_data[2][k+15] == pat[15]) begin
 					found = found + 1;
+					m0 = k;
 					$display("    saved data found at D64 offset %0d (track/sector index %0d, offset in sector %0d)", k, k / 256, k % 256);
 				end
 			end
-			check(found == 1, "the 16 saved bytes are in the D64 file");
+			check(found == 1 && m0 % 256 == 4, "the 16 saved bytes are in the D64 file, after the link and load address");
 			// directory: 2nd entry "OUT"
 			found = 0;
 			for (k = 0; k < 8; k = k + 1)
@@ -930,6 +977,7 @@ initial begin
 	if (testsel == "disk") test_disk(0);
 	if (testsel == "g64") test_disk(1);
 	if (testsel == "wb") test_disk(2);
+	if (testsel == "wb2") test_disk(5);
 	if (testsel == "dboot") test_disk(3);
 	if (testsel == "d81") test_disk(4);
 	if (testsel == "all" || testsel == "boot" || testsel == "prg" || testsel == "t64" || testsel == "crt" || testsel == "tap" || testsel == "turbo")

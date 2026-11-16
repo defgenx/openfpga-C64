@@ -6,6 +6,9 @@ for $readmemh in tb_system.sv) plus work/disk/disk.vh with the sizes.
   wb.d64              one PRG "TEST": same, then SAVEs 16 bytes ("OUT", $C100..$C10F, byte i = i ^ $5A)
                       through the KERNAL and writes $77 to $C002 when SAVE has returned
                       ($C003 = carry of SAVE)
+  wb2.d64             one PRG "TEST": SAVEs "OUT" ($2000-$37FF, 25 blocks, byte = y ^ page), scratches it
+                      (S0:OUT), SAVEs it again (byte = y ^ page ^ $A5); $C003/$C004 = carry of each SAVE,
+                      $C002 = $77 at the end
   run.d81             the 1581 variant of run.d64 (if the drive is built with the 1581)
 """
 import os, sys
@@ -55,6 +58,53 @@ def prog_wb():
     c[setnam_at + 3] = name & 255
     c[setnam_at + 5] = name >> 8
     return bytes([0x01, 0x08]) + basic_stub() + bytes(c)
+
+
+def asm(base, parts):
+    """parts: ints (bytes), ('L', name) labels, (kind, name) refs with kind abs / lo / hi / rel."""
+    code, fix, labels = bytearray(), [], {}
+    for p in parts:
+        if isinstance(p, int): code.append(p)
+        elif isinstance(p, bytes): code += p
+        elif p[0] == 'L': labels[p[1]] = base + len(code)
+        else:
+            fix.append((len(code), p[0], p[1])); code += bytes(2 if p[0] == 'abs' else 1)
+    for at, kind, name in fix:
+        a = labels[name]
+        if kind == 'abs': code[at:at + 2] = bytes([a & 255, a >> 8])
+        elif kind == 'lo': code[at] = a & 255
+        elif kind == 'hi': code[at] = a >> 8
+        else:
+            d = a - (base + at + 1)
+            assert -128 <= d < 128
+            code[at] = d & 255
+    return bytes(code)
+
+
+def prog_wb2():
+    def setnam(n, name): return [0xA9, n, 0xA2, ('lo', name), 0xA0, ('hi', name), 0x20, 0xBD, 0xFF]
+    code = asm(0x080D, [
+        0xA9, 0xAA, 0x8D, 0x00, 0xC0, 0xA9, 0x55, 0x8D, 0x01, 0xC0,       # sig
+        0xA9, 0x00, 0x85, 0xFD, 0x20, ('abs', 'fill'),                    # fill, $FD = 0
+        0x20, ('abs', 'save'), 0xA9, 0x00, 0x2A, 0x8D, 0x03, 0xC0,        # SAVE, carry -> $C003
+        *setnam(6, 'scr'),
+        0xA9, 0x0F, 0xA2, 0x08, 0xA0, 0x0F, 0x20, 0xBA, 0xFF,             # SETLFS 15,8,15
+        0x20, 0xC0, 0xFF, 0xA9, 0x0F, 0x20, 0xC3, 0xFF,                   # OPEN, CLOSE 15
+        0xA9, 0xA5, 0x85, 0xFD, 0x20, ('abs', 'fill'),                    # fill, $FD = $A5
+        0x20, ('abs', 'save'), 0xA9, 0x00, 0x2A, 0x8D, 0x04, 0xC0,        # SAVE, carry -> $C004
+        0xA9, 0x77, 0x8D, 0x02, 0xC0,
+        ('L', 'end'), 0x4C, ('abs', 'end'),
+        # fill: $2000-$37FF, byte = y ^ page ^ ($FD)
+        ('L', 'fill'), 0xA9, 0x00, 0x85, 0xFB, 0xA9, 0x20, 0x85, 0xFC, 0xA0, 0x00,
+        ('L', 'floop'), 0x98, 0x45, 0xFC, 0x45, 0xFD, 0x91, 0xFB, 0xC8, 0xD0, ('rel', 'floop'),
+        0xE6, 0xFC, 0xA5, 0xFC, 0xC9, 0x38, 0xD0, ('rel', 'floop'), 0x60,
+        # save: "OUT", 1,8,1, $2000-$37FF
+        ('L', 'save'), *setnam(3, 'out'),
+        0xA9, 0x01, 0xA2, 0x08, 0xA0, 0x01, 0x20, 0xBA, 0xFF,
+        0xA9, 0x00, 0x85, 0xFB, 0xA9, 0x20, 0x85, 0xFC,
+        0xA9, 0xFB, 0xA2, 0x00, 0xA0, 0x38, 0x20, 0xD8, 0xFF, 0x60,
+        ('L', 'out'), b'OUT', ('L', 'scr'), b'S0:OUT'])
+    return bytes([0x01, 0x08]) + basic_stub() + code
 
 
 def build_d64(prg, name=b'TEST'):
@@ -137,7 +187,7 @@ def hexfile(name, data):
 
 if __name__ == '__main__':
     run, wb = prog_run(), prog_wb()
-    d64_run, d64_wb = build_d64(run), build_d64(wb)
+    d64_run, d64_wb, d64_wb2 = build_d64(run), build_d64(wb), build_d64(prog_wb2())
     g64 = gcr_ref.synth_g64(d64_run)
     d81 = build_d81(run)
     hexfile('run.d64.hex', d64_run)
@@ -145,6 +195,8 @@ if __name__ == '__main__':
     hexfile('run.g64.hex', g64)
     hexfile('run.g64_ref.hex', gcr_ref.synth_g64(d64_run))
     hexfile('wb.g64_ref.hex', gcr_ref.synth_g64(d64_wb))
+    hexfile('wb2.d64.hex', d64_wb2)
+    hexfile('wb2.g64_ref.hex', gcr_ref.synth_g64(d64_wb2))
     hexfile('run.d81.hex', d81)
     open(os.path.join(out, 'run.g64'), 'wb').write(g64)
     with open(os.path.join(out, 'disk.vh'), 'w') as f:
