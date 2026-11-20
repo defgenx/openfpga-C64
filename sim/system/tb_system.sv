@@ -708,12 +708,13 @@ task automatic test_tap;
 endtask
 
 always #100_000_000 $fflush;   // every 100 us of sim time
-always #50_000_000_000 $display("[%0t] heartbeat: c64_addr=%h reset_n=%b media.state=%0d autostart.state=%0d key=%h at_prompt=%b disk_ready=%b drive_led=%b", $time, dut.c64.c64_addr, dut.c64.reset_n, dut.media.state, dut.autostart.state, dut.autostart.key, dut.c64_at_prompt, dut.c64_disk_ready, dut.c64.drive_led[0]);
+always #50_000_000_000 $display("[%0t] heartbeat: c64_addr=%h reset_n=%b media.state=%0d autostart.state=%0d key=%h at_prompt=%b disk_ready=%b drive_led=%b drive_a=%h", $time, dut.c64.c64_addr, dut.c64.reset_n, dut.media.state, dut.autostart.state, dut.autostart.key, dut.c64_at_prompt, dut.c64_disk_ready, dut.c64.drive_led[0], dut.c64.iec_drive.c1541.drives[0].c1541_drv.c1541_logic.cpu_a[15:0]);
 
 
 // ---------------------------------------------------------------- disk and NTSC tests
 `include "disk.vh"
 integer mount_cnt = 0, sys_cnt = 0;
+integer disk_s = 120;   // +disk_s=<n>: seconds of C64 time the disk test waits for the program
 realtime t_mount, t_wr_last;
 integer  wr_bytes_d = 0;
 always @(posedge dut.clk_sys) begin
@@ -756,8 +757,13 @@ function automatic [7:0] wb2_byte(input integer n);
 	wb2_byte = (n == 0) ? 8'h00 : (n == 1) ? 8'h20 : (((n-2) % 256) ^ (8'h20 + (n-2) / 256) ^ 8'hA5);
 endfunction
 
+// byte n of the file wb4.d64's program saves: load address $2000, then y ^ page ^ $5C
+function automatic [7:0] wb4_byte(input integer n);
+	wb4_byte = (n == 0) ? 8'h00 : (n == 1) ? 8'h20 : (((n-2) % 256) ^ (8'h20 + (n-2) / 256) ^ 8'h5C);
+endfunction
+
 // kind: 0 D64 picked at the prompt, 1 G64, 2 D64 + write-back, 3 D64 found by the boot datatable scan, 4 D81,
-//       5 D64 + SAVE, scratch, SAVE of a 25-block file
+//       5 D64 + SAVE, scratch, SAVE of a 25-block file, 8 D64 with tracks 1-17 full + SAVE (lands on track 19)
 task automatic test_disk(input integer kind);
 	integer k, size, m0, found, w0, lastsec, t, sct, o, n, blks;
 	realtime tpick, tsig, tdone;
@@ -771,6 +777,7 @@ task automatic test_disk(input integer kind);
 		1:    begin f = "work/disk/run.g64.hex"; size = `G64_SIZE; ref_f = "work/disk/run.g64_ref.hex"; end
 		2:    begin f = "work/disk/wb.d64.hex";  size = `D64_SIZE; ref_f = "work/disk/wb.g64_ref.hex"; end
 		5:    begin f = "work/disk/wb2.d64.hex"; size = `D64_SIZE; ref_f = "work/disk/wb2.g64_ref.hex"; end
+		8:    begin f = "work/disk/wb4.d64.hex"; size = `D64_SIZE; ref_f = "work/disk/wb4.g64_ref.hex"; end
 		default: begin f = "work/disk/run.d81.hex"; size = `D81_SIZE; ref_f = ""; end
 		endcase
 		$display("== TEST: disk kind %0d (%0s, %0d bytes) ==", kind, f, size);
@@ -795,13 +802,13 @@ task automatic test_disk(input integer kind);
 		if (kind != 4) check_psram_image(ref_f, (kind == 1) ? size : `G64_SIZE, "G64 image in PSRAM equals sim/gcr_ref.py synth_g64 / the file");
 		if (kind == 4) check(dut.img_type == 2'b11, "img_type = 1581");
 		// autostart: LOAD"*",8,1 then RUN, the first PRG loads over IEC and runs
-		if (kind == 5) begin
+		if (kind == 5 || kind == 8) begin
 			for (k = 0; k < 900 && !(pk(25'hC002) == 8'h77); k = k + 1) apf_run_us(100000);
 			tsig = $realtime;
-			$display("   both SAVEs done %0.2f s after the mount (C002=%h C003=%h C004=%h)", (tsig - t_mount) / 1e12, pk(25'hC002), pk(25'hC003), pk(25'hC004));
-			check(pk(25'hC002) == 8'h77 && pk(25'hC003) == 8'h00 && pk(25'hC004) == 8'h00, "both SAVEs returned without error");
+			$display("   program done %0.2f s after the mount (C002=%h C003=%h C004=%h)", (tsig - t_mount) / 1e12, pk(25'hC002), pk(25'hC003), pk(25'hC004));
+			check(pk(25'hC002) == 8'h77 && pk(25'hC003) == 8'h00 && pk(25'hC004) == 8'h00, (kind == 5) ? "both SAVEs returned without error" : "SAVE returned without error");
 			for (k = 0; k < 400 && !(wr_cmds > 0 && ($realtime - t_wr_last) > 1.5e12 && ($realtime - tsig) > 1.5e12); k = k + 1) apf_run_us(100000);
-			$display("   write-back: %0d Dataslot Write commands, last at %0.2f s after the second SAVE returned", wr_cmds, (t_wr_last - tsig) / 1e12);
+			$display("   write-back: %0d Dataslot Write commands, last at %0.2f s after the program finished", wr_cmds, (t_wr_last - tsig) / 1e12);
 			// directory entry "OUT": closed PRG, 25 blocks; its chain holds the second SAVE, used in the BAM
 			found = -1;
 			for (k = 0; k < 8; k = k + 1)
@@ -811,21 +818,22 @@ task automatic test_disk(input integer kind);
 			if (found >= 0) begin
 				m0 = (357+1)*256 + 32*found;
 				check(slot_data[2][m0 + 2] == 8'h82, "OUT is a closed PRG");
-				check(slot_data[2][m0 + 30] == 8'd25 && slot_data[2][m0 + 31] == 8'd0, "OUT has 25 blocks");
+				check(slot_data[2][m0 + 30] == ((kind == 5) ? 8'd25 : 8'd3) && slot_data[2][m0 + 31] == 8'd0, "OUT has its block count");
+				if (kind == 8) check(slot_data[2][m0 + 3] == 8'd19, "OUT starts on track 19");
 				w0 = 0; lastsec = 0;     // w0: bytes compared that differ, lastsec: blocks free in the BAM
 				t = slot_data[2][m0 + 3]; sct = slot_data[2][m0 + 4]; n = 0; blks = 0;
 				while (t != 0 && blks < 30) begin
 					o = d64_sec(t, sct) * 256;
 					if (slot_data[2][357*256 + 4*t + 1 + sct/8][sct%8]) lastsec = lastsec + 1;
 					for (k = 2; k < ((slot_data[2][o] != 0) ? 256 : slot_data[2][o+1] + 1); k = k + 1) begin
-						if (slot_data[2][o + k] !== wb2_byte(n)) w0 = w0 + 1;
+						if (slot_data[2][o + k] !== ((kind == 5) ? wb2_byte(n) : wb4_byte(n))) w0 = w0 + 1;
 						n = n + 1;
 					end
 					blks = blks + 1;
 					t = slot_data[2][o]; sct = slot_data[2][o + 1];
 				end
 				$display("   OUT: %0d blocks in the chain, %0d bytes, %0d differ, %0d free in the BAM", blks, n, w0, lastsec);
-				check(blks == 25 && n == 6146 && w0 == 0, "OUT's chain holds the data of the second SAVE");
+				check((kind == 5) ? (blks == 25 && n == 6146 && w0 == 0) : (blks == 3 && n == 602 && w0 == 0), "OUT's chain holds the data written last");
 				check(lastsec == 0, "OUT's sectors are allocated in the BAM");
 			end
 		end else if (kind == 2) begin
@@ -869,7 +877,7 @@ task automatic test_disk(input integer kind);
 			check(found == 1, "directory has the file OUT");
 			check(slot_data[2][(357+1)*256 + 32 + 2] == 8'h82 || slot_data[2][(357+1)*256 + 2] == 8'h82, "directory entry is a closed PRG");
 		end else begin
-			for (k = 0; k < 1200 && !(pk(25'hC000) == 8'hAA && pk(25'hC001) == 8'h55); k = k + 1) apf_run_us(100000);
+			for (k = 0; k < 10 * disk_s && !(pk(25'hC000) == 8'hAA && pk(25'hC001) == 8'h55); k = k + 1) apf_run_us(100000);
 			tsig = $realtime;
 			$display("   signature seen %0.2f s after the mount, %0.2f s after the pick", (tsig - t_mount) / 1e12, (tsig - tpick) / 1e12);
 			check(pk(25'hC000) == 8'hAA && pk(25'hC001) == 8'h55, "first PRG on the disk loaded over IEC and ran (signature)");
@@ -920,6 +928,21 @@ task automatic test_ntsc;
 		check(sdr.err == 0, "no SDRAM protocol errors");
 	end
 endtask
+
+// +drvwatch: drive 8 CPU writes to $4000-$7FFF (the RAM board, or on a stock 1541 mirrors of its RAM and VIAs)
+integer drv47_cnt = 0;
+always @(posedge dut.clk_sys) if ($test$plusargs("drvwatch")) begin
+	if (dut.c64.iec_drive.c1541.drives[0].c1541_drv.c1541_logic.ph2_r && !dut.c64.iec_drive.c1541.drives[0].c1541_drv.c1541_logic.cpu_rw && dut.c64.iec_drive.c1541.drives[0].c1541_drv.c1541_logic.cpu_a[15:14] == 2'b01) begin
+		drv47_cnt <= drv47_cnt + 1;
+		if (drv47_cnt < 40 || drv47_cnt % 5000 == 0)
+			$display("[%0t] drive write #%0d $%h = %h (lands on %0s)", $time, drv47_cnt, dut.c64.iec_drive.c1541.drives[0].c1541_drv.c1541_logic.cpu_a[15:0], dut.c64.iec_drive.c1541.drives[0].c1541_drv.c1541_logic.cpu_do,
+				dut.c64.iec_drive.c1541.drives[0].c1541_drv.c1541_logic.ramb_cs ? "RAM board" : (dut.c64.iec_drive.c1541.drives[0].c1541_drv.c1541_logic.cpu_a[12:11] == 0) ? "drive RAM" :
+				(dut.c64.iec_drive.c1541.drives[0].c1541_drv.c1541_logic.cpu_a[12:10] == 6) ? "VIA1 (serial bus)" : (dut.c64.iec_drive.c1541.drives[0].c1541_drv.c1541_logic.cpu_a[12:10] == 7) ? "VIA2 (disk)" : "nothing");
+	end
+end
+
+// +stdrom: stock kernal and 1541 ROM instead of the DolphinDOS pair
+initial if ($test$plusargs("stdrom")) force dut.status[15:14] = 2'd1;
 
 // ---------------------------------------------------------------- main
 string testsel;
@@ -972,12 +995,31 @@ initial begin
 		apf_host(16'h0011, 0, 0);
 	end
 	$display("[%0t] APF boot sequence done (reset_n=%b)", $time, dut.reset_n);
+	if ($value$plusargs("disk_s=%d", disk_s)) $display("   disk test waits %0d s for the program", disk_s);
+
+	// +rom=<hex> [+romsize=<bytes>]: a System ROM file (BASIC, kernal, drive ROM) picked in slot 5
+	begin
+		string romf;
+		integer romsz, k2, dl0;
+		if ($value$plusargs("rom=%s", romf)) begin
+			if (!$value$plusargs("romsize=%d", romsz)) romsz = 49152;
+			load_hex(5, romf, romsz);
+			dl0 = ioctl_dl_cnt;
+			apf_set_slot(5, romsz);
+			$display("[%0t] System ROM picked (%0s, %0d bytes)", $time, romf, romsz);
+			abort_if_idle(dl0);
+			for (k2 = 0; k2 < 4000 && dut.ioctl_download; k2 = k2 + 1) apf_run_us(1000);
+			$display("[%0t] System ROM loaded: ioctl_download=%b, drive rom_32k=%b rom_16k=%b", $time, dut.ioctl_download,
+				dut.c64.iec_drive.c1541.rom_32k_i, dut.c64.iec_drive.c1541.rom_16k_i);
+		end
+	end
 
 	if (testsel == "ntsc") test_ntsc;
 	if (testsel == "disk") test_disk(0);
 	if (testsel == "g64") test_disk(1);
 	if (testsel == "wb") test_disk(2);
 	if (testsel == "wb2") test_disk(5);
+	if (testsel == "wb4") test_disk(8);
 	if (testsel == "dboot") test_disk(3);
 	if (testsel == "d81") test_disk(4);
 	if (testsel == "all" || testsel == "boot" || testsel == "prg" || testsel == "t64" || testsel == "crt" || testsel == "tap" || testsel == "turbo")

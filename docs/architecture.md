@@ -2,8 +2,9 @@
 
 This core is [C64_MiSTer](https://github.com/MiSTer-devel/C64_MiSTer) with a new board layer for the
 Analogue Pocket. The machine — everything under `rtl/` (FPGA64, 6510, VIC-II, CIAs, SIDs, cartridge,
-REU, tape, 1541/1581 drives) — is used **unmodified**, as a git submodule pinned in
-`src/fpga/C64_MiSTer`. Only `c64.sv` (the `emu` top) and the MiSTer framework under `sys/` are replaced.
+REU, tape, 1541/1581 drives) — is used as a git submodule pinned in `src/fpga/C64_MiSTer`, unmodified.
+`c64.sv` (the `emu` top) and the MiSTer framework under `sys/` are replaced, and `core/c1541_logic.sv`
+takes the place of `rtl/iec_drive/c1541_logic.sv` ([1541 drive RAM](#1541-drive-ram)).
 
 ```
 apf_top (Analogue)
@@ -106,6 +107,19 @@ keeps `sd_ack` high while it reads that buffer, then:
   header block gives the sector, the next data block is its 256 bytes. Each sector found is written to
   the file at its D64 offset. Main_MiSTer writes the whole track and zero-fills sectors it does not find;
   here they are left untouched.
+
+### 1541 drive RAM
+
+A 32 KB drive ROM in the System ROM file (DolphinDOS, SpeedDOS) switches the 1541 to its parallel-cable
+mode, `ext_en` in `c1541_multi`. C64_MiSTer then adds 8 KB of drive RAM at `$8000-$9FFF`, as DolphinDOS's
+hardware does. `core/c1541_logic.sv` also adds a 16 KB RAM board at `$4000-$7FFF` in that mode, like the
+Ultimate 64's "1541 RAM Board" setting: some DolphinDOS 2 builds keep their buffers there (the 1541 ROM
+of the DolphinDOS2 package for the U64, "ROM WITH RAM AT $6000"). On a stock 1541 those addresses only
+mirror the 2 KB RAM and the VIAs, so such a build overwrites the DOS zero page and cannot read a
+directory. In that mode the mirrors at `$4000-$7FFF` are gone; with a 16 KB drive ROM or the stock ROM
+the decoding is the original one. The rest of the file is C64_MiSTer's: when updating the submodule,
+diff `rtl/iec_drive/c1541_logic.sv` against the version named at the top of the copy and carry
+changes over.
 
 ## Memory
 

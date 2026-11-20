@@ -204,7 +204,7 @@ checks they run. What is converted or stubbed: [sim/system/README.md](sim/system
 * [C64_MiSTer](https://github.com/MiSTer-devel/C64_MiSTer) by Sorgelig and contributors — FPGA64 by
   Peter Wendrich, the 1541/1581 by darfpga, Sorgelig and Robin Wünderlich, the SID by Dar and
   contributors — GPL. Included unmodified as a submodule; `c64_top.sv` is derived
-  from its `c64.sv`. The D64 ↔ GCR conversion follows
+  from its `c64.sv`, and `core/c1541_logic.sv` is its `c1541_logic.sv` with a drive RAM board added. The D64 ↔ GCR conversion follows
   [Main_MiSTer](https://github.com/MiSTer-devel/Main_MiSTer)'s `support/c64/c64.cpp` (GPL).
 * Analogue's [openFPGA core template](https://github.com/open-fpga/core-template) (`src/fpga/apf`,
   `core_bridge_cmd.v`).

@@ -23,7 +23,7 @@ Needs verilator >= 5.052, python3, docker with `hdlc/ghdl:yosys`.
 | pll_c64 / pll_cfg | stub: PAL 31.526 MHz clk_sys (31720 ps), clk64 exactly 2x with coinciding rising edges, locked at 20 us. The reconfiguration is modelled: pll_cfg keeps K (register 7) and 'start' (register 2); the PLL drops `locked` for 60 us and then runs at 74.25 MHz x (7 + K/2^32) / 9 for clk64 (NTSC: 32.727 MHz clk_sys) |
 | mf_datatable, altddio_out, scfifo | behavioural models (`stubs.sv`) |
 | SDRAM chip | `sdram_model.sv`: 4 banks x 8192 x 1024 x 16, CL / BL from the mode register, DQM, auto-precharge; counts protocol errors (tRCD, closed bank, open-bank ACTIVE, mode register not set); `peek8` backdoor uses the controller's address map |
-| iec_drive (1541 + 1581, Dolphin ROM, parallel port) | real RTL from `rtl/iec_drive` (`gen_drive.py`: ROM `.mif` -> `$readmemh`); its VHDL (`T65`, `iecdrv_via6522`) converted with GHDL like the C64 (`t65_drv_conv.v`, `via_drv.v`; `BCD_en` tied to its VHDL default 1) |
+| iec_drive (1541 + 1581, Dolphin ROM, parallel port) | real RTL from `rtl/iec_drive`, `c1541_logic.sv` from `src/fpga/core` as in the core (`gen_drive.py`: ROM `.mif` -> `$readmemh`); its VHDL (`T65`, `iecdrv_via6522`) converted with GHDL like the C64 (`t65_drv_conv.v`, `via_drv.v`; `BCD_en` tied to its VHDL default 1) |
 | sound_i2s | stubbed (no audio) |
 | PSRAM (cram0) | real `ddram_psram`/`psram` on `psram_model.sv`: 8 MB async CellularRAM, multiplexed address, checks t_vp/t_avs/t_avh/t_cvs/t_wp/t_dw/t_aw and the 70/20 ns read access times (data is garbage before it is valid), `err` counter, peek8/poke8 backdoors |
 | APF | `tb_system.sv`: bridge read/write, host commands (poll for 0x4F4B), datatable, target-command servicing (see below) |
@@ -56,6 +56,7 @@ Everything generated is under `work/` (git-ignored).
 | dboot | disk already in the datatable at boot (persisted disk, boot scan) | 4.4 s / 15 min, 6 checks |
 | wb | program SAVEs "OUT" over IEC; the D64 held by the APF model must hold file, directory entry and BAM | 9 s / 25 min, 15 checks; flush 0.23 s after SAVE returns |
 | wb2 | SAVE a 25-block "OUT", scratch it (`S0:OUT`), SAVE it again (default DolphinDOS kernal and drive ROM): closed PRG, 25 blocks, chain holds the second SAVE, sectors allocated in the BAM | 15 s / 55 min, 14 checks |
+| wb4 | tracks 1-17 full in the BAM, SAVE "OUT" (600 bytes) with the DolphinDOS kernal and drive ROM: lands on track 19, closed PRG, 3 blocks, data, BAM | 9 s / 30 min, 15 checks |
 | d81 | the same disk as D81 (1581) | 5 s / 13 min, 9 checks |
 
 `gen_disk.py` writes the images and programs (`work/disk/*.hex`, `disk.vh`). The APF model also serves
@@ -63,5 +64,15 @@ Dataslot Write (0x0184): like the Pocket, it reads the core's write buffer one w
 bridge word *i*+1) and updates the slot's file.
 
 `+screen=1` prints the C64 screen text once per simulated second (useful while a LOAD runs).
+
+Other plusargs (in `ARGS`):
+
+* `+rom=<hex> [+romsize=<bytes>]`: picks a System ROM file (BASIC + KERNAL + 1541 ROM, one byte per
+  line, default 49152 bytes) in slot 5 after the boot, before the test. ROM files are not in the repo.
+  `make disk ARGS="+rom=work/rom/x.hex"` checks that a disk loads with that ROM set.
+* `+disk_s=<n>`: how long the disk test waits for the program, in seconds of C64 time (default 120).
+* `+drvwatch`: prints drive 8's CPU writes to `$4000-$7FFF` and what they land on (RAM board, or the
+  RAM / VIA mirrors of a stock 1541).
+* `+stdrom`: stock kernal and 1541 ROM instead of the built-in DolphinDOS pair.
 c1581_drv.sv is copied with T65's open `rdy/abort_n/nmi_n/so_n` tied to 1: they rely on VHDL port defaults
 that Verilator does not apply (without it the 1581 CPU is halted and LOAD hangs at SEARCHING FOR *).

@@ -48,7 +48,8 @@ To use another kernal (JiffyDOS, DolphinDOS, SpeedDOS), make a System ROM file a
 then KERNAL, then the 1541 ROM, concatenated (32 KB, or 48 KB with a 32 KB 1541 ROM) — put it in
 `Assets/c64/common/` and pick it in *Core Settings → System ROM*. The C64 resets with it, and it is loaded
 again at every start. DolphinDOS and SpeedDOS ROM sets with a 32 KB drive ROM also enable the fast
-parallel cable between the C64 and the drives.
+parallel cable between the C64 and the drives, and the drive RAM those ROMs use (at `$8000`, and a
+16 KB RAM board at `$4000-$7FFF` as on the Ultimate 64).
 
 ## 3. Add software
 

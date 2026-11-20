@@ -9,6 +9,8 @@ for $readmemh in tb_system.sv) plus work/disk/disk.vh with the sizes.
   wb2.d64             one PRG "TEST": SAVEs "OUT" ($2000-$37FF, 25 blocks, byte = y ^ page), scratches it
                       (S0:OUT), SAVEs it again (byte = y ^ page ^ $A5); $C003/$C004 = carry of each SAVE,
                       $C002 = $77 at the end
+  wb4.d64             one PRG "TEST", tracks 1-17 full in the BAM: SAVEs "OUT" ($2000-$2257, byte = y ^ page ^ $5C),
+                      which lands on track 19; $C003 = carry of SAVE, $C002 = $77 at the end
   run.d81             the 1581 variant of run.d64 (if the drive is built with the 1581)
 """
 import os, sys
@@ -107,6 +109,31 @@ def prog_wb2():
     return bytes([0x01, 0x08]) + basic_stub() + code
 
 
+def prog_wb4():
+    def setnam(n, name): return [0xA9, n, 0xA2, ('lo', name), 0xA0, ('hi', name), 0x20, 0xBD, 0xFF]
+    code = asm(0x080D, [
+        0xA9, 0xAA, 0x8D, 0x00, 0xC0, 0xA9, 0x55, 0x8D, 0x01, 0xC0,       # sig
+        0xA9, 0x00, 0x8D, 0x04, 0xC0, 0x85, 0xFB, 0xA9, 0x20, 0x85, 0xFC, # fill $2000-$22FF: y ^ page ^ $5C
+        0xA0, 0x00, ('L', 'floop'), 0x98, 0x45, 0xFC, 0x49, 0x5C, 0x91, 0xFB, 0xC8, 0xD0, ('rel', 'floop'),
+        0xE6, 0xFC, 0xA5, 0xFC, 0xC9, 0x23, 0xD0, ('rel', 'floop'),
+        *setnam(3, 'out'), 0xA9, 0x01, 0xA2, 0x08, 0xA0, 0x01, 0x20, 0xBA, 0xFF,
+        0xA9, 0x00, 0x85, 0xFB, 0xA9, 0x20, 0x85, 0xFC,                   # SAVE $2000-$2257 (600 bytes)
+        0xA9, 0xFB, 0xA2, 0x58, 0xA0, 0x22, 0x20, 0xD8, 0xFF, 0xA9, 0x00, 0x2A, 0x8D, 0x03, 0xC0,
+        0xA9, 0x77, 0x8D, 0x02, 0xC0,
+        ('L', 'end'), 0x4C, ('abs', 'end'),
+        ('L', 'out'), b'OUT'])
+    return bytes([0x01, 0x08]) + basic_stub() + code
+
+
+def full_low_tracks(img):
+    """Mark tracks 1-17 full in the BAM, so a new file goes to track 19 (19-sector zone)."""
+    img = bytearray(img)
+    bam = (gcr_ref.START[17]) * 256
+    for t in range(1, 18):
+        img[bam + 4 * t:bam + 4 * t + 4] = bytes(4)
+    return bytes(img)
+
+
 def build_d64(prg, name=b'TEST'):
     img = bytearray(174848)
     sec_off = lambda t, s: (gcr_ref.START[t - 1] + s) * 256
@@ -188,6 +215,7 @@ def hexfile(name, data):
 if __name__ == '__main__':
     run, wb = prog_run(), prog_wb()
     d64_run, d64_wb, d64_wb2 = build_d64(run), build_d64(wb), build_d64(prog_wb2())
+    d64_wb4 = full_low_tracks(build_d64(prog_wb4()))
     g64 = gcr_ref.synth_g64(d64_run)
     d81 = build_d81(run)
     hexfile('run.d64.hex', d64_run)
@@ -197,6 +225,8 @@ if __name__ == '__main__':
     hexfile('wb.g64_ref.hex', gcr_ref.synth_g64(d64_wb))
     hexfile('wb2.d64.hex', d64_wb2)
     hexfile('wb2.g64_ref.hex', gcr_ref.synth_g64(d64_wb2))
+    hexfile('wb4.d64.hex', d64_wb4)
+    hexfile('wb4.g64_ref.hex', gcr_ref.synth_g64(d64_wb4))
     hexfile('run.d81.hex', d81)
     open(os.path.join(out, 'run.g64'), 'wb').write(g64)
     with open(os.path.join(out, 'disk.vh'), 'w') as f:

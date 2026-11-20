@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Prepare C64_MiSTer's iec_drive (1541 / 1581) for Verilator:
-  * copy rtl/iec_drive/*.sv|*.v to work/drive, with the ROM images (.mif, an Altera attribute
-    Verilator ignores) turned into $readmemh of work/roms/*.hex
+  * copy rtl/iec_drive/*.sv|*.v to work/drive (c1541_logic.sv from src/fpga/core, as in c64.qip),
+    with the ROM images (.mif, an Altera attribute Verilator ignores) turned into $readmemh of
+    work/roms/*.hex
   * copy iecdrv_via6522.vhd to work/vhdl for the GHDL conversion (ghdl_conv.sh)
 """
 import os, re, shutil
 here = os.path.dirname(os.path.abspath(__file__))
 src = os.path.normpath(os.path.join(here, '../../src/fpga/C64_MiSTer/rtl/iec_drive'))
+core = os.path.normpath(os.path.join(here, '../../src/fpga/core'))
+OVERRIDES = ('c1541_logic.sv',)   # the core's own copies of these replace the submodule's
 dst = os.path.join(here, 'work/drive')
 rom = os.path.join(here, 'work/roms')
 vh = os.path.join(here, 'work/vhdl')
@@ -43,7 +46,7 @@ def mif2hex(mif, hexf):
 
 
 for f in os.listdir(src):
-    p = os.path.join(src, f)
+    p = os.path.join(core if f in OVERRIDES else src, f)
     if f.endswith('.mif'):
         mif2hex(p, os.path.join(rom, f[:-4] + '.hex'))
     elif f.endswith('.sv') or f.endswith('.v'):
