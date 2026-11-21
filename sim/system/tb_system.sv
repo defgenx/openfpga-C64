@@ -763,7 +763,8 @@ function automatic [7:0] wb4_byte(input integer n);
 endfunction
 
 // kind: 0 D64 picked at the prompt, 1 G64, 2 D64 + write-back, 3 D64 found by the boot datatable scan, 4 D81,
-//       5 D64 + SAVE, scratch, SAVE of a 25-block file, 8 D64 with tracks 1-17 full + SAVE (lands on track 19)
+//       5 D64 + SAVE, scratch, SAVE of a 25-block file, 8 D64 with tracks 1-17 full + SAVE (lands on track 19),
+//       9 D64 + wb4's SAVE with $91 = 0 and no IRQ
 task automatic test_disk(input integer kind);
 	integer k, size, m0, found, w0, lastsec, t, sct, o, n, blks;
 	realtime tpick, tsig, tdone;
@@ -778,6 +779,7 @@ task automatic test_disk(input integer kind);
 		2:    begin f = "work/disk/wb.d64.hex";  size = `D64_SIZE; ref_f = "work/disk/wb.g64_ref.hex"; end
 		5:    begin f = "work/disk/wb2.d64.hex"; size = `D64_SIZE; ref_f = "work/disk/wb2.g64_ref.hex"; end
 		8:    begin f = "work/disk/wb4.d64.hex"; size = `D64_SIZE; ref_f = "work/disk/wb4.g64_ref.hex"; end
+		9:    begin f = "work/disk/stop.d64.hex"; size = `D64_SIZE; ref_f = "work/disk/stop.g64_ref.hex"; end
 		default: begin f = "work/disk/run.d81.hex"; size = `D81_SIZE; ref_f = ""; end
 		endcase
 		$display("== TEST: disk kind %0d (%0s, %0d bytes) ==", kind, f, size);
@@ -802,7 +804,7 @@ task automatic test_disk(input integer kind);
 		if (kind != 4) check_psram_image(ref_f, (kind == 1) ? size : `G64_SIZE, "G64 image in PSRAM equals sim/gcr_ref.py synth_g64 / the file");
 		if (kind == 4) check(dut.img_type == 2'b11, "img_type = 1581");
 		// autostart: LOAD"*",8,1 then RUN, the first PRG loads over IEC and runs
-		if (kind == 5 || kind == 8) begin
+		if (kind == 5 || kind == 8 || kind == 9) begin
 			for (k = 0; k < 900 && !(pk(25'hC002) == 8'h77); k = k + 1) apf_run_us(100000);
 			tsig = $realtime;
 			$display("   program done %0.2f s after the mount (C002=%h C003=%h C004=%h)", (tsig - t_mount) / 1e12, pk(25'hC002), pk(25'hC003), pk(25'hC004));
@@ -1020,6 +1022,7 @@ initial begin
 	if (testsel == "wb") test_disk(2);
 	if (testsel == "wb2") test_disk(5);
 	if (testsel == "wb4") test_disk(8);
+	if (testsel == "stop") test_disk(9);
 	if (testsel == "dboot") test_disk(3);
 	if (testsel == "d81") test_disk(4);
 	if (testsel == "all" || testsel == "boot" || testsel == "prg" || testsel == "t64" || testsel == "crt" || testsel == "tap" || testsel == "turbo")

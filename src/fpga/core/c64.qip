@@ -17,7 +17,7 @@ set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ../C64_
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/iec_drive/iecdrv_misc.sv]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/iec_drive/lfsr.v]
 set_global_assignment -name QIP_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/t65/t65.qip]
-set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/cpu_6510.vhd]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cpu_6510.vhd]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/mos6526.v]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/rtcF83.sv]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) ../C64_MiSTer/rtl/sdram.v]

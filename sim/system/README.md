@@ -18,7 +18,7 @@ Needs verilator >= 5.052, python3, docker with `hdlc/ghdl:yosys`.
 |------|-----|
 | core_top, core_bridge_cmd, c64_media, c64_top, ddram_psram/psram, autostart, hid_c64, osk, c64_video | real RTL, unmodified |
 | sdram.v, cartridge.v, reu.v, mos6526.v, c1351, c1530, tape_subsystem/tap_scanner/tap_time_map/tape_counter, rtcF83, SID | real RTL (SID: copies in `work/sid` with `function(wire ..)` turned into `input`, which Verilator cannot parse) |
-| fpga64_sid_iec (6510/T65, VIC-II, buslogic, keyboard, rgbcolor), video_sync | VHDL converted with `ghdl synth --out=verilog` (`gen_vhdl.py`, `ghdl_conv.sh`, `post_ghdl.py`). Patches on the copy only: `work.T65` instantiation, static port actual, `when others` on a few case statements, ports renamed to the lower case c64_top.sv uses |
+| fpga64_sid_iec (6510/T65, VIC-II, buslogic, keyboard, rgbcolor), video_sync | VHDL converted with `ghdl synth --out=verilog` (`gen_vhdl.py`, `ghdl_conv.sh`, `post_ghdl.py`). `cpu_6510.vhd` from `src/fpga/core` as in the core. Patches on the copy only: `work.T65` instantiation, static port actual, `when others` on a few case statements, ports renamed to the lower case c64_top.sv uses |
 | kernal / chargen ROMs (`dprom`) | `dprom` replaced by generated Verilog ROMs (`work/dprom_*.v`) loaded with `$readmemh` from the `.mif` files converted by `gen_vhdl.py` |
 | pll_c64 / pll_cfg | stub: PAL 31.526 MHz clk_sys (31720 ps), clk64 exactly 2x with coinciding rising edges, locked at 20 us. The reconfiguration is modelled: pll_cfg keeps K (register 7) and 'start' (register 2); the PLL drops `locked` for 60 us and then runs at 74.25 MHz x (7 + K/2^32) / 9 for clk64 (NTSC: 32.727 MHz clk_sys) |
 | mf_datatable, altddio_out, scfifo | behavioural models (`stubs.sv`) |
@@ -57,6 +57,7 @@ Everything generated is under `work/` (git-ignored).
 | wb | program SAVEs "OUT" over IEC; the D64 held by the APF model must hold file, directory entry and BAM | 9 s / 25 min, 15 checks; flush 0.23 s after SAVE returns |
 | wb2 | SAVE a 25-block "OUT", scratch it (`S0:OUT`), SAVE it again (default DolphinDOS kernal and drive ROM): closed PRG, 25 blocks, chain holds the second SAVE, sectors allocated in the BAM | 15 s / 55 min, 14 checks |
 | wb4 | tracks 1-17 full in the BAM, SAVE "OUT" (600 bytes) with the DolphinDOS kernal and drive ROM: lands on track 19, closed PRG, 3 blocks, data, BAM | 9 s / 30 min, 15 checks |
+| stop | SAVE "OUT" (600 bytes) after SEI, CIA1 IRQs off and `$91` = 0, as Wizball+'s high-score saver does, with the DolphinDOS kernal and drive ROM: closed PRG, 3 blocks, data, BAM (DolphinDOS's fast SAVE reads `$91` = 0 as STOP; `core/cpu_6510.vhd` hides that case) | 10 s / 48 min, 14 checks |
 | d81 | the same disk as D81 (1581) | 5 s / 13 min, 9 checks |
 
 `gen_disk.py` writes the images and programs (`work/disk/*.hex`, `disk.vh`). The APF model also serves

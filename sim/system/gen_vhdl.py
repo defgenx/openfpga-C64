@@ -2,7 +2,7 @@
 """Prepare C64_MiSTer's VHDL for ghdl: copy the sources to work/vhdl, patch them, and
 turn the ROMs (.mif) into hex files plus small Verilog ROM modules (work/dprom_*.v).
 
-  * cpu_6510.vhd: VHDL-87 style `work.T65` instantiation -> `entity work.T65`
+  * cpu_6510.vhd (from src/fpga/core, as in c64.qip): VHDL-87 style `work.T65` instantiation -> `entity work.T65`
   * fpga64_buslogic.vhd: every `entity work.dprom generic map ("x.mif", N)` becomes a
     component `dprom_x` implemented in Verilog (ghdl cannot read the .mif)
 """
@@ -19,16 +19,20 @@ os.makedirs(rom, exist_ok=True)
 srcs = ['t65/T65_Pack.vhd', 't65/T65_ALU.vhd', 't65/T65_MCode.vhd', 't65/T65.vhd', 'cpu_6510.vhd',
         'video_vicII_656x.vhd', 'video_sync.vhd', 'fpga64_rgbcolor.vhd', 'fpga64_keyboard.vhd',
         'spram.vhd', 'fpga64_buslogic.vhd', 'fpga64_sid_iec.vhd']
+core = os.path.normpath(os.path.join(here, '../../src/fpga/core'))
+OVERRIDES = ('cpu_6510.vhd',)   # the core's own copies of these replace the submodule's, as in c64.qip
 for s in srcs:
-    shutil.copy(os.path.join(rtl, s), os.path.join(vh, os.path.basename(s)))
+    d = core if s in OVERRIDES else rtl
+    shutil.copy(os.path.join(d, s), os.path.join(vh, os.path.basename(s)))
 
 p = os.path.join(vh, 'cpu_6510.vhd')
 t = open(p).read()
 t = t.replace('cpu: work.T65', 'cpu: entity work.T65')
 # VHDL-93 needs a static port actual
 t = t.replace('Res_n   => not reset,', 'Res_n   => res_n_i,')
-t = t.replace('\tsignal accessIO : std_logic;\nbegin', '\tsignal accessIO : std_logic;\n\tsignal res_n_i : std_logic;\nbegin\n\tres_n_i <= not reset;')
-assert 'res_n_i <=' in t
+t = t.replace('\tsignal accessIO : std_logic;\n', '\tsignal accessIO : std_logic;\n\tsignal res_n_i : std_logic;\n')
+t = t.replace('\tcpu: entity work.T65', '\tres_n_i <= not reset;\n\tcpu: entity work.T65')
+assert 'signal res_n_i' in t and 'res_n_i <=' in t
 open(p, 'w').write(t)
 
 # ghdl wants complete case choices on unsigned selectors; Quartus does not

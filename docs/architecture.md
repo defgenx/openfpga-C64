@@ -3,8 +3,9 @@
 This core is [C64_MiSTer](https://github.com/MiSTer-devel/C64_MiSTer) with a new board layer for the
 Analogue Pocket. The machine — everything under `rtl/` (FPGA64, 6510, VIC-II, CIAs, SIDs, cartridge,
 REU, tape, 1541/1581 drives) — is used as a git submodule pinned in `src/fpga/C64_MiSTer`, unmodified.
-`c64.sv` (the `emu` top) and the MiSTer framework under `sys/` are replaced, and `core/c1541_logic.sv`
-takes the place of `rtl/iec_drive/c1541_logic.sv` ([1541 drive RAM](#1541-drive-ram)).
+`c64.sv` (the `emu` top) and the MiSTer framework under `sys/` are replaced, `core/c1541_logic.sv`
+takes the place of `rtl/iec_drive/c1541_logic.sv` ([1541 drive RAM](#1541-drive-ram)) and
+`core/cpu_6510.vhd` that of `rtl/cpu_6510.vhd` ([DolphinDOS STOP check](#dolphindos-stop-check)).
 
 ```
 apf_top (Analogue)
@@ -120,6 +121,23 @@ directory. In that mode the mirrors at `$4000-$7FFF` are gone; with a 16 KB driv
 the decoding is the original one. The rest of the file is C64_MiSTer's: when updating the submodule,
 diff `rtl/iec_drive/c1541_logic.sv` against the version named at the top of the copy and carry
 changes over.
+
+### DolphinDOS STOP check
+
+The KERNAL IRQ copies keyboard row 7 to `$91` every 1/60 s; bit 7 is clear while RUN/STOP is held. The
+standard KERNAL's STOP routine treats only `$7F` as pressed, but DolphinDOS 2.0's fast LOAD and SAVE test
+bit 7 alone (`BIT $91`). A program that clears `$80-$FF` and stops the KERNAL IRQ before calling SAVE,
+like Wizball+'s high-score saver, then has its SAVE stopped right after the OPEN, which leaves an
+unclosed file. A real C64 with DolphinDOS does the same.
+
+`core/cpu_6510.vhd` changes that one case. When the CPU executes `BIT $91` from `$E000-$FFFF` with HIRAM
+set (opcode `$24` read there, then `$91` from the next address: the kernal ROM, or an Ultimax
+cartridge's ROM) and the byte read at `$0091` is `$00`, the CPU gets `$80`. `$00` would mean all eight
+keys of row 7 held at once. Every value the keyboard produces, `$7F` included, reaches the CPU unchanged,
+so RUN/STOP still stops a DolphinDOS LOAD or SAVE. RAM is not written, and other reads of `$91`, code in
+RAM and the standard KERNAL (it has no `BIT $91`) are not affected. The rest of the file is C64_MiSTer's:
+when updating the submodule, diff `rtl/cpu_6510.vhd` against the version named at the top of the copy and
+carry changes over.
 
 ## Memory
 
